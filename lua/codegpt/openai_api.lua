@@ -40,7 +40,6 @@ local function curl_callback(response, cb)
     local status = response.status
     local body = response.body
     if status ~= 200 then
-        body = body:gsub("%s+", " ")
         print("Error: " .. status .. " " .. body)
         return
     end
