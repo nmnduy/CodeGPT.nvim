@@ -1,6 +1,7 @@
 local curl = require("plenary.curl")
 local Render = require("codegpt.template_render")
 local Utils = require("codegpt.utils")
+local Api = require("codegpt.api")
 
 AnthropicProvider = {}
 
