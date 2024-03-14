@@ -53,7 +53,7 @@ function AnthropicProvider.make_headers()
 end
 
 
-function curl_callback(response, cb)
+local function curl_callback(response, cb)
     local status = response.status
     print("Status: " .. status)
     local body = response.body
