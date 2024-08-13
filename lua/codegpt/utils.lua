@@ -48,6 +48,12 @@ function Utils.insert_lines(lines)
     vim.api.nvim_win_set_cursor(0, { line + #lines, 0 })
 end
 
+function Utils.append_lines(lines, bufnr, start_row, start_col, end_row, end_col)
+    -- use end_row + 2 to have one empty line after the last line
+    vim.api.nvim_buf_set_lines(bufnr, end_row + 2, end_row + 2, false, lines)
+    vim.api.nvim_win_set_cursor(0, { end_row + 2, 0 })
+end
+
 function Utils.replace_lines(lines, bufnr, start_row, start_col, end_row, end_col)
     vim.api.nvim_buf_set_text(bufnr, start_row, start_col, end_row, end_col, lines)
 end

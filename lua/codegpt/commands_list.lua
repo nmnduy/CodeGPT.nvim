@@ -36,6 +36,7 @@ CommandsList.CallbackTypes = {
         end
     end,
     ["custom"] = nil,
+    ["append"] = Utils.append_lines,
 }
 
 function CommandsList.get_cmd_opts(cmd)
