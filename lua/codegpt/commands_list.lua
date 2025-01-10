@@ -39,7 +39,7 @@ CommandsList.CallbackTypes = {
         lines = Utils.remove_trailing_whitespace(lines)
         Utils.fix_indentation(bufnr, start_row, end_row, lines)
         if vim.api.nvim_buf_is_valid(bufnr) == true then
-            Utils.insert_lines(lines)
+            Utils.append_lines(lines, bufnr, start_row, start_col, end_row, end_col)
         else
             -- if the buffer is not valid, open a popup.
             -- This can happen when the user closes the previous popup window before the request is finished.
