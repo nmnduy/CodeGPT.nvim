@@ -22,33 +22,29 @@ local function generate_messages(command, cmd_opts, command_args, text_selection
     return messages
 end
 
-local function get_max_tokens(max_tokens, messages)
-    local ok, total_length = Utils.get_accurate_tokens(vim.fn.json_encode(messages))
 
-    if not ok then
-        for _, message in ipairs(messages) do
-            total_length = total_length + string.len(message.content)
-            total_length = total_length + string.len(message.role)
-        end
+local function get_token_count(messages)
+    local token_count = 0
+    for _, message in ipairs(messages) do
+        token_count = token_count + #message.content
     end
-
-    if total_length >= max_tokens then
-        error("Total length of messages exceeds max_tokens: " .. total_length .. " > " .. max_tokens)
-    end
-
-    return max_tokens - total_length
+    return token_count
 end
 
 function OpenAIProvider.make_request(command, cmd_opts, command_args, text_selection)
     local messages = generate_messages(command, cmd_opts, command_args, text_selection)
-    local max_tokens = get_max_tokens(cmd_opts.max_tokens, messages)
+    local context_size = get_token_count(messages)
+    if context_size > cmd_opts.context_size then
+        error("Context size is: " .. context_size .. " which is greater than the context size limit: " .. cmd_opts.context_size)
+        return
+    end
 
     local request = {
         temperature = cmd_opts.temperature,
         n = cmd_opts.number_of_choices,
         model = cmd_opts.model,
         messages = messages,
-        max_tokens = max_tokens,
+        max_tokens = cmd_opts.max_tokens,
     }
 
     request = vim.tbl_extend("force", request, cmd_opts.extra_params)
