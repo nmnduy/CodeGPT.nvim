@@ -56,14 +56,20 @@ function Utils.append_lines(lines, bufnr, start_row, start_col, end_row, end_col
     local current_lines = vim.api.nvim_buf_get_lines(bufnr, start_row, end_row + 1, false)
     local last_line = current_lines[#current_lines]
 
-    -- Append the new lines to the last line of the selection
-    current_lines[#current_lines] = last_line:sub(1, end_col) .. lines[1]
+    -- Append the first line content after the end_col to the last line of the current lines
+    current_lines[#current_lines] = last_line:sub(1, end_col)
+
+    -- Insert a new line and then append the new lines starting from the first line
+    table.insert(current_lines, lines[1])
     for i = 2, #lines do
         table.insert(current_lines, lines[i])
     end
 
     -- Replace the old lines with the new appended lines
     vim.api.nvim_buf_set_lines(bufnr, start_row, end_row + 1, false, current_lines)
+
+    -- Move the cursor to the beginning of the newly appended content
+    vim.api.nvim_win_set_cursor(0, {start_row + #current_lines - #lines + 1, 0})
 end
 
 local function get_code_block(lines2)
