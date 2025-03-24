@@ -49,7 +49,7 @@ function GroqProvider.make_request(command, cmd_opts, command_args, text_selecti
         n = cmd_opts.number_of_choices,
         model = cmd_opts.model,
         messages = messages,
-        max_tokens = max_tokens,
+        max_tokens = cmd_opts.max_output_tokens,
     }
 
     return request
