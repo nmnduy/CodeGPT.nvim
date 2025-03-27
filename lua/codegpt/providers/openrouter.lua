@@ -55,10 +55,36 @@ local function generate_messages(command, cmd_opts, command_args, text_selection
     return messages
 end
 
-local function get_max_tokens(max_tokens, messages)
+local function get_max_tokens(max_tokens, messages, model)
+    -- Special handling for Google Gemini model messages structure
+    if model and model:match("google/gemini") then
+        local ok, total_length = Utils.get_accurate_tokens(vim.fn.json_encode(messages))
+
+        if not ok then
+            total_length = 0
+            -- For Gemini, the content is in a different format with type and text fields
+            for _, message in ipairs(messages) do
+                for _, content_part in ipairs(message.content) do
+                    if content_part.type == "text" then
+                        total_length = total_length + string.len(content_part.text)
+                    end
+                end
+                total_length = total_length + string.len(message.role)
+            end
+        end
+
+        if total_length >= max_tokens then
+            error("Total length of messages exceeds max_tokens: " .. total_length .. " > " .. max_tokens)
+        end
+
+        return max_tokens - total_length
+    end
+
+    -- Standard token counting for other models
     local ok, total_length = Utils.get_accurate_tokens(vim.fn.json_encode(messages))
 
     if not ok then
+        total_length = 0
         for _, message in ipairs(messages) do
             total_length = total_length + string.len(message.content)
             total_length = total_length + string.len(message.role)
@@ -74,7 +100,7 @@ end
 
 function OpenRouterProvider.make_request(command, cmd_opts, command_args, text_selection)
     local messages = generate_messages(command, cmd_opts, command_args, text_selection)
-    local max_tokens = get_max_tokens(cmd_opts.max_tokens, messages)
+    local max_tokens = get_max_tokens(cmd_opts.max_tokens, messages, cmd_opts.model)
 
     local request = {
         temperature = cmd_opts.temperature,
