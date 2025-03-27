@@ -3,13 +3,46 @@ local Render = require("codegpt.template_render")
 local Utils = require("codegpt.utils")
 local Api = require("codegpt.api")
 
-GroqProvider = {}
+OpenRouterProvider = {}
 
 local function generate_messages(command, cmd_opts, command_args, text_selection)
+    local model = cmd_opts.model
     local system_message = Render.render(command, cmd_opts.system_message_template, command_args, text_selection,
         cmd_opts)
     local user_message = Render.render(command, cmd_opts.user_message_template, command_args, text_selection, cmd_opts)
 
+    -- Special handling for Google Gemini model
+    if model and model:match("google/gemini") then
+        local messages = {}
+
+        -- For Gemini, combine system and user messages if both exist
+        if system_message and system_message ~= "" and user_message and user_message ~= "" then
+            table.insert(messages, {
+                role = "user",
+                content = {
+                    { type = "text", text = system_message .. "\n\n" .. user_message }
+                }
+            })
+        elseif system_message and system_message ~= "" then
+            table.insert(messages, {
+                role = "user",
+                content = {
+                    { type = "text", text = system_message }
+                }
+            })
+        elseif user_message and user_message ~= "" then
+            table.insert(messages, {
+                role = "user",
+                content = {
+                    { type = "text", text = user_message }
+                }
+            })
+        end
+
+        return messages
+    end
+
+    -- Standard message format for other models
     local messages = {}
     if system_message ~= nil and system_message ~= "" then
         table.insert(messages, { role = "system", content = system_message })
@@ -22,11 +55,36 @@ local function generate_messages(command, cmd_opts, command_args, text_selection
     return messages
 end
 
+local function get_max_tokens(max_tokens, messages, model)
+    -- Special handling for Google Gemini model messages structure
+    if model and model:match("google/gemini") then
+        local ok, total_length = Utils.get_accurate_tokens(vim.fn.json_encode(messages))
 
-local function get_max_tokens(max_tokens, messages)
+        if not ok then
+            total_length = 0
+            -- For Gemini, the content is in a different format with type and text fields
+            for _, message in ipairs(messages) do
+                for _, content_part in ipairs(message.content) do
+                    if content_part.type == "text" then
+                        total_length = total_length + string.len(content_part.text)
+                    end
+                end
+                total_length = total_length + string.len(message.role)
+            end
+        end
+
+        if total_length >= max_tokens then
+            error("Total length of messages exceeds max_tokens: " .. total_length .. " > " .. max_tokens)
+        end
+
+        return max_tokens - total_length
+    end
+
+    -- Standard token counting for other models
     local ok, total_length = Utils.get_accurate_tokens(vim.fn.json_encode(messages))
 
     if not ok then
+        total_length = 0
         for _, message in ipairs(messages) do
             total_length = total_length + string.len(message.content)
             total_length = total_length + string.len(message.role)
@@ -40,9 +98,9 @@ local function get_max_tokens(max_tokens, messages)
     return max_tokens - total_length
 end
 
-function GroqProvider.make_request(command, cmd_opts, command_args, text_selection)
+function OpenRouterProvider.make_request(command, cmd_opts, command_args, text_selection)
     local messages = generate_messages(command, cmd_opts, command_args, text_selection)
-    local max_tokens = get_max_tokens(cmd_opts.max_tokens, messages)
+    local max_tokens = get_max_tokens(cmd_opts.max_tokens, messages, cmd_opts.model)
 
     local request = {
         temperature = cmd_opts.temperature,
@@ -71,24 +129,24 @@ local function curl_callback(response, cb)
 
     vim.schedule_wrap(function(msg)
         local json = vim.fn.json_decode(msg)
-        GroqProvider.handle_response(json, cb)
+        OpenRouterProvider.handle_response(json, cb)
     end)(body)
 
     Api.run_finished_hook()
 end
 
-function GroqProvider.make_headers()
-    local token = vim.env["GROQ_API_KEY"]
+function OpenRouterProvider.make_headers()
+    local token = vim.env["OPENROUTER_API_KEY"]
     if not token then
         error(
-            "GroqApi Key not found, set the env variable 'GROQ_API_KEY'"
+            "OpenRouter API Key not found, set the env variable 'OPENROUTER_API_KEY'"
         )
     end
 
     return { Content_Type = "application/json", Authorization = "Bearer " .. token }
 end
 
-function GroqProvider.handle_response(json, cb)
+function OpenRouterProvider.handle_response(json, cb)
     if json == nil then
         print("Response empty")
     elseif json.error then
@@ -101,6 +159,7 @@ function GroqProvider.handle_response(json, cb)
         if response_text ~= nil then
             if type(response_text) ~= "string" or response_text == "" then
                 print("Error: No response text " .. type(response_text))
+                print(vim.inspect(response_text))
             else
                 local bufnr = vim.api.nvim_get_current_buf()
                 if vim.g["codegpt_clear_visual_selection"] then
@@ -115,10 +174,10 @@ function GroqProvider.handle_response(json, cb)
     end
 end
 
-function GroqProvider.make_call(payload, cb)
+function OpenRouterProvider.make_call(payload, cb)
     local payload_str = vim.fn.json_encode(payload)
-    local url = "https://api.groq.com/openai/v1/chat/completions"
-    local headers = GroqProvider.make_headers()
+    local url = "https://openrouter.ai/api/v1/chat/completions"
+    local headers = OpenRouterProvider.make_headers()
     Api.run_started_hook()
     curl.post(url, {
         body = payload_str,
@@ -133,4 +192,4 @@ function GroqProvider.make_call(payload, cb)
     })
 end
 
-return GroqProvider
+return OpenRouterProvider
