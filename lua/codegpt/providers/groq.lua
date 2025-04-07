@@ -42,7 +42,7 @@ end
 
 function GroqProvider.make_request(command, cmd_opts, command_args, text_selection)
     local messages = generate_messages(command, cmd_opts, command_args, text_selection)
-    local max_tokens = get_max_tokens(cmd_opts.max_tokens, messages)
+    get_max_tokens(cmd_opts.max_tokens, messages)
 
     local request = {
         temperature = cmd_opts.temperature,
