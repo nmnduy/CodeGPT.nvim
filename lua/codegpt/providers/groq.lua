@@ -23,7 +23,7 @@ local function generate_messages(command, cmd_opts, command_args, text_selection
 end
 
 
-local function get_max_tokens(max_tokens, messages)
+local function check_context_length(max_tokens, messages)
     local ok, total_length = Utils.get_accurate_tokens(vim.fn.json_encode(messages))
 
     if not ok then
@@ -42,7 +42,7 @@ end
 
 function GroqProvider.make_request(command, cmd_opts, command_args, text_selection)
     local messages = generate_messages(command, cmd_opts, command_args, text_selection)
-    get_max_tokens(cmd_opts.max_tokens, messages)
+    check_context_length(cmd_opts.max_tokens, messages)
 
     local request = {
         temperature = cmd_opts.temperature,

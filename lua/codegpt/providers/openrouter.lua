@@ -55,7 +55,7 @@ local function generate_messages(command, cmd_opts, command_args, text_selection
     return messages
 end
 
-local function get_max_tokens(max_tokens, messages, model)
+local function check_context_length(max_tokens, messages, model)
     -- Special handling for Google Gemini model messages structure
     if model and model:match("google/gemini") then
         local ok, total_length = Utils.get_accurate_tokens(vim.fn.json_encode(messages))
@@ -100,7 +100,7 @@ end
 
 function OpenRouterProvider.make_request(command, cmd_opts, command_args, text_selection)
     local messages = generate_messages(command, cmd_opts, command_args, text_selection)
-    local max_tokens = get_max_tokens(cmd_opts.max_tokens, messages, cmd_opts.model)
+    check_context_length(cmd_opts.max_tokens, messages, cmd_opts.model)
 
     local request = {
         temperature = cmd_opts.temperature,
