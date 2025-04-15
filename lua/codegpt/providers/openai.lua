@@ -34,8 +34,10 @@ end
 function OpenAIProvider.make_request(command, cmd_opts, command_args, text_selection)
     local messages = generate_messages(command, cmd_opts, command_args, text_selection)
     local context_size = get_token_count(messages)
-    if context_size > cmd_opts.context_size then
-        error("Context size is: " .. context_size .. " which is greater than the context size limit: " .. cmd_opts.context_size)
+    local max_tokens = cmd_opts.max_tokens
+
+    if context_size > cmd_opts.max_tokens then
+        error("Context size is: " .. context_size .. " which is greater than the context size limit: " .. max_tokens)
         return
     end
 
@@ -44,7 +46,7 @@ function OpenAIProvider.make_request(command, cmd_opts, command_args, text_selec
         n = cmd_opts.number_of_choices,
         model = cmd_opts.model,
         messages = messages,
-        max_tokens = cmd_opts.max_tokens,
+        max_tokens = cmd_opts.max_output_tokens,
     }
 
     request = vim.tbl_extend("force", request, cmd_opts.extra_params)
