@@ -11,33 +11,45 @@ local function generate_messages(command, cmd_opts, command_args, text_selection
         cmd_opts)
     local user_message = Render.render(command, cmd_opts.user_message_template, command_args, text_selection, cmd_opts)
 
+    -- Check for image paths in command_args
+    local has_image = false
+    local image_path = nil
+    if command_args and type(command_args) == "string" then
+        image_path = command_args:match("<image:%s*(.-)>")
+        has_image = image_path ~= nil
+    end
+
     -- Special handling for Google Gemini model
     if model and model:match("google/gemini") then
         local messages = {}
+        local content = {}
 
-        -- For Gemini, combine system and user messages if both exist
+        -- Add text content
         if system_message and system_message ~= "" and user_message and user_message ~= "" then
-            table.insert(messages, {
-                role = "user",
-                content = {
-                    { type = "text", text = system_message .. "\n\n" .. user_message }
-                }
-            })
+            table.insert(content, { type = "text", text = system_message .. "\n\n" .. user_message })
         elseif system_message and system_message ~= "" then
-            table.insert(messages, {
-                role = "user",
-                content = {
-                    { type = "text", text = system_message }
-                }
-            })
+            table.insert(content, { type = "text", text = system_message })
         elseif user_message and user_message ~= "" then
-            table.insert(messages, {
-                role = "user",
-                content = {
-                    { type = "text", text = user_message }
-                }
-            })
+            table.insert(content, { type = "text", text = user_message })
         end
+
+        -- Add image content if present
+        if has_image then
+            local image_data = Utils.read_file_as_base64(image_path)
+            if image_data then
+                table.insert(content, {
+                    type = "image_url",
+                    image_url = {
+                        url = "data:image/jpeg;base64," .. image_data
+                    }
+                })
+            end
+        end
+
+        table.insert(messages, {
+            role = "user",
+            content = content
+        })
 
         return messages
     end
@@ -48,7 +60,38 @@ local function generate_messages(command, cmd_opts, command_args, text_selection
         table.insert(messages, { role = "system", content = system_message })
     end
 
-    if user_message ~= nil and user_message ~= "" then
+    -- Handle user message with possible image
+    if has_image then
+        local image_data = Utils.read_file_as_base64(image_path)
+        if image_data and user_message and user_message ~= "" then
+            -- Create content array with text and image
+            local content = {
+                { type = "text", text = user_message },
+                {
+                    type = "image_url",
+                    image_url = {
+                        url = "data:image/jpeg;base64," .. image_data
+                    }
+                }
+            }
+            table.insert(messages, { role = "user", content = content })
+        elseif image_data then
+            -- Just image, no text
+            local content = {
+                {
+                    type = "image_url",
+                    image_url = {
+                        url = "data:image/jpeg;base64," .. image_data
+                    }
+                }
+            }
+            table.insert(messages, { role = "user", content = content })
+        elseif user_message and user_message ~= "" then
+            -- Just text, no image (fallback if image loading fails)
+            table.insert(messages, { role = "user", content = user_message })
+        end
+    elseif user_message ~= nil and user_message ~= "" then
+        -- No image, just regular text message
         table.insert(messages, { role = "user", content = user_message })
     end
 

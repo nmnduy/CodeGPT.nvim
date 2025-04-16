@@ -155,4 +155,27 @@ function Utils.remove_trailing_whitespace(lines)
 end
 
 
+function Utils.read_file_as_base64(file_path)
+    if not file_path then return nil end
+
+    -- Expand path if it contains ~
+    if file_path:sub(1, 1) == "~" then
+        file_path = os.getenv("HOME") .. file_path:sub(2)
+    end
+
+    local file = io.open(file_path, "rb")
+    if not file then
+        print("Error: Could not open image file: " .. file_path)
+        return nil
+    end
+
+    local content = file:read("*all")
+    file:close()
+
+    -- Convert to base64
+    local base64_str = vim.fn.system({"base64", "-w", "0"}, content):gsub("\n", "")
+    return base64_str
+end
+
+
 return Utils
