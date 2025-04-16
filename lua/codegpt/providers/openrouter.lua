@@ -6,7 +6,6 @@ local Api = require("codegpt.api")
 OpenRouterProvider = {}
 
 local function generate_messages(command, cmd_opts, command_args, text_selection)
-    local model = cmd_opts.model
     local system_message = Render.render(command, cmd_opts.system_message_template, command_args, text_selection,
         cmd_opts)
     local user_message = Render.render(command, cmd_opts.user_message_template, command_args, text_selection, cmd_opts)
@@ -21,45 +20,9 @@ local function generate_messages(command, cmd_opts, command_args, text_selection
     end
     local has_images = #image_paths > 0
 
-    -- Special handling for Google Gemini model
-    if model and model:match("google/gemini") then
-        local messages = {}
-        local content = {}
-
-        -- Add text content
-        if system_message and system_message ~= "" and user_message and user_message ~= "" then
-            table.insert(content, { type = "text", text = system_message .. "\n\n" .. user_message })
-        elseif system_message and system_message ~= "" then
-            table.insert(content, { type = "text", text = system_message })
-        elseif user_message and user_message ~= "" then
-            table.insert(content, { type = "text", text = user_message })
-        end
-
-        -- Add all images if present
-        if has_images then
-            for _, image_path in ipairs(image_paths) do
-                local image_data = Utils.read_file_as_base64(image_path)
-                if image_data then
-                    table.insert(content, {
-                        type = "image_url",
-                        image_url = {
-                            url = "data:image/jpeg;base64," .. image_data
-                        }
-                    })
-                end
-            end
-        end
-
-        table.insert(messages, {
-            role = "user",
-            content = content
-        })
-
-        return messages
-    end
-
-    -- Standard message format for other models
     local messages = {}
+
+    -- Add system message if present
     if system_message ~= nil and system_message ~= "" then
         table.insert(messages, { role = "system", content = system_message })
     end
