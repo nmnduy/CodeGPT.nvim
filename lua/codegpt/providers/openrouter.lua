@@ -12,12 +12,14 @@ local function generate_messages(command, cmd_opts, command_args, text_selection
     local user_message = Render.render(command, cmd_opts.user_message_template, command_args, text_selection, cmd_opts)
 
     -- Check for image paths in command_args
-    local has_image = false
-    local image_path = nil
+    local image_paths = {}
     if command_args and type(command_args) == "string" then
-        image_path = command_args:match("<image:%s*(.-)>")
-        has_image = image_path ~= nil
+        -- Extract all image tags from command_args
+        for path in command_args:gmatch("<image:%s*(.-)>") do
+            table.insert(image_paths, path)
+        end
     end
+    local has_images = #image_paths > 0
 
     -- Special handling for Google Gemini model
     if model and model:match("google/gemini") then
@@ -33,16 +35,18 @@ local function generate_messages(command, cmd_opts, command_args, text_selection
             table.insert(content, { type = "text", text = user_message })
         end
 
-        -- Add image content if present
-        if has_image then
-            local image_data = Utils.read_file_as_base64(image_path)
-            if image_data then
-                table.insert(content, {
-                    type = "image_url",
-                    image_url = {
-                        url = "data:image/jpeg;base64," .. image_data
-                    }
-                })
+        -- Add all images if present
+        if has_images then
+            for _, image_path in ipairs(image_paths) do
+                local image_data = Utils.read_file_as_base64(image_path)
+                if image_data then
+                    table.insert(content, {
+                        type = "image_url",
+                        image_url = {
+                            url = "data:image/jpeg;base64," .. image_data
+                        }
+                    })
+                end
             end
         end
 
@@ -60,38 +64,34 @@ local function generate_messages(command, cmd_opts, command_args, text_selection
         table.insert(messages, { role = "system", content = system_message })
     end
 
-    -- Handle user message with possible image
-    if has_image then
-        local image_data = Utils.read_file_as_base64(image_path)
-        if image_data and user_message and user_message ~= "" then
-            -- Create content array with text and image
-            local content = {
-                { type = "text", text = user_message },
-                {
+    -- Handle user message with possible images
+    if has_images then
+        local content = {}
+
+        -- Add text content if present
+        if user_message and user_message ~= "" then
+            table.insert(content, { type = "text", text = user_message })
+        end
+
+        -- Add all images
+        for _, image_path in ipairs(image_paths) do
+            local image_data = Utils.read_file_as_base64(image_path)
+            if image_data then
+                table.insert(content, {
                     type = "image_url",
                     image_url = {
                         url = "data:image/jpeg;base64," .. image_data
                     }
-                }
-            }
+                })
+            end
+        end
+
+        -- Only add the message if we have at least one valid content item
+        if #content > 0 then
             table.insert(messages, { role = "user", content = content })
-        elseif image_data then
-            -- Just image, no text
-            local content = {
-                {
-                    type = "image_url",
-                    image_url = {
-                        url = "data:image/jpeg;base64," .. image_data
-                    }
-                }
-            }
-            table.insert(messages, { role = "user", content = content })
-        elseif user_message and user_message ~= "" then
-            -- Just text, no image (fallback if image loading fails)
-            table.insert(messages, { role = "user", content = user_message })
         end
     elseif user_message ~= nil and user_message ~= "" then
-        -- No image, just regular text message
+        -- No images, just regular text message
         table.insert(messages, { role = "user", content = user_message })
     end
 
