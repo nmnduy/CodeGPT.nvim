@@ -109,8 +109,14 @@ function Utils.parse_lines(response_text)
         vim.api.nvim_err_write("ChatGPT response: \n" .. response_text .. "\n")
     end
 
+    -- If response contains <code-edit>, parse as code edit instructions
+    if response_text:find("<code%-edit>") then
+        return Utils.parse_code_edit_instructions(response_text)
+    end
+
     return vim.fn.split(vim.trim(response_text), "\n")
 end
+
 
 function Utils.fix_indentation(bufnr, start_row, end_row, new_lines)
     local original_lines = vim.api.nvim_buf_get_lines(bufnr, start_row, end_row, true)
