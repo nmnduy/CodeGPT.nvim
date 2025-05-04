@@ -1,5 +1,7 @@
 Utils = {}
 
+local lsp_util = vim.lsp.util
+
 function Utils.get_filetype()
     local bufnr = vim.api.nvim_get_current_buf()
     return vim.api.nvim_buf_get_option(bufnr, "filetype")
@@ -226,6 +228,64 @@ function Utils.parse_code_edit_instructions(text)
     end
 
     return instructions
+end
+
+local function apply_code_edit(edit)
+    local object_name = edit.object
+    local new_code = edit.content
+    if not object_name or not new_code then
+        vim.api.nvim_err_writeln("Missing object or content in code edit block.")
+        return
+    end
+
+    local params = lsp_util.make_position_params()
+    params.query = object_name
+
+    -- Use LSP workspace/symbol to find the object
+    vim.lsp.buf_request(0, 'workspace/symbol', {query = object_name}, function(err, result, ctx)
+        if err or not result or #result == 0 then
+            vim.api.nvim_err_writeln("Object '" .. object_name .. "' not found by LSP.")
+            return
+        end
+
+        -- Find the best match (by file, and by name)
+        local uri = vim.uri_from_bufnr(0)
+        local match = nil
+        for _, sym in ipairs(result) do
+            if sym.name == object_name and (sym.location and sym.location.uri == uri) then
+                match = sym
+                break
+            end
+        end
+        if not match then
+            -- fallback: accept first symbol with the correct name
+            for _, sym in ipairs(result) do
+                if sym.name == object_name then
+                    match = sym
+                    break
+                end
+            end
+        end
+        if not match then
+            vim.api.nvim_err_writeln("Could not find object '" .. object_name .. "' in current buffer.")
+            return
+        end
+
+        local range = match.location and match.location.range or match.range
+        if not range then
+            vim.api.nvim_err_writeln("No range found for object '" .. object_name .. "'.")
+            return
+        end
+
+        local bufnr = vim.uri_to_bufnr(match.location and match.location.uri or match.uri)
+        local start_row = range.start.line
+        local end_row = range["end"].line
+
+        -- Replace lines in buffer
+        local lines = vim.split(new_code, "\n")
+        vim.api.nvim_buf_set_lines(bufnr, start_row, end_row + 1, false, lines)
+        vim.notify("Edited object: " .. object_name)
+    end)
 end
 
 return Utils
