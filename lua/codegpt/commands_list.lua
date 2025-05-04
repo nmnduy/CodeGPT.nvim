@@ -46,6 +46,16 @@ CommandsList.CallbackTypes = {
             Ui.popup(lines, Utils.get_filetype(), bufnr, start_row, start_col, end_row, end_col)
         end
     end,
+    ["apply-code-edits"] = function(lines, bufnr, start_row, start_col, end_row, end_col)
+        local edits = Utils.parse_code_edit_instructions(table.concat(lines, "\n"))
+        if #edits == 0 then
+            vim.api.nvim_err_writeln("No code edits found.")
+            return
+        end
+        for _, edit in ipairs(edits) do
+            Utils.apply_code_edit_with_treesitter(edit)
+        end
+    end,
     ["custom"] = nil,
 }
 
