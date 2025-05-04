@@ -288,6 +288,25 @@ function Utils.apply_code_edit_with_treesitter(edit)
     end
 
     local lang = get_lang_from_filename(file)
+    if not lang then
+        vim.api.nvim_out_write(
+            "Could not detect language for file: " .. file .. ". Appending code at end of file.\n"
+        )
+        local new_lines = vim.split(new_code, "\n")
+        for _, l in ipairs(new_lines) do
+            table.insert(lines, l)
+        end
+        local wf = io.open(file, "w")
+        if not wf then
+            vim.api.nvim_err_writeln("Could not open file for writing: " .. file)
+            return
+        end
+        wf:write(table.concat(lines, "\n"))
+        wf:close()
+        vim.notify("Code edit applied to file: " .. file)
+        return
+    end
+
     local parser = vim.treesitter.get_string_parser(table.concat(lines, "\n"), lang)
     local tree = parser:parse()[1]
     local root = tree:root()
