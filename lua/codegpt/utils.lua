@@ -241,47 +241,63 @@ function Utils.apply_code_edit_with_treesitter(edit)
 
     local bufnr = vim.api.nvim_get_current_buf()
     local lang = parsers.get_buf_lang(bufnr)
-    if lang ~= "python" then
-        vim.api.nvim_err_writeln("Only Python is supported in this example.")
-        return
-    end
-
     local parser = parsers.get_parser(bufnr, lang)
     local tree = parser:parse()[1]
     local root = tree:root()
     local found = false
 
-    local function find_object(node)
-        -- For Python, look for function_definition or class_definition with matching name
-        local type = node:type()
-        if (type == "function_definition" or type == "class_definition") then
-            -- The first child is "def"/"class", second is the name
-            local name_node = node:field("name")[1]
-            if name_node then
-                local name = vim.treesitter.get_node_text(name_node, bufnr)
-                if name == object_name then
-                    return node
+    -- Try to get a language-specific query for object definitions
+    local ok, query = pcall(vim.treesitter.query.get, lang, "highlights")
+    local object_node = nil
+
+    local function find_object_by_query()
+        if not query then return nil end
+        for id, node, metadata in query:iter_captures(root, bufnr, 0, -1) do
+            local capture = query.captures[id]
+            -- Look for likely named captures
+            if capture and (capture:find("function") or capture:find("class") or capture:find("method")) then
+                local name_node = nil
+                -- Try common field names for the name
+                name_node = node:field("name")[1] or node:field("identifier")[1] or nil
+                if name_node then
+                    local name = vim.treesitter.get_node_text(name_node, bufnr)
+                    if name == object_name then
+                        return node
+                    end
                 end
             end
         end
+        return nil
+    end
+
+    local function find_object_generic(node)
+        -- Try to find any node with 'name' or 'identifier' field matching the object name
+        local name_node = node:field("name")[1] or node:field("identifier")[1]
+        if name_node then
+            local name = vim.treesitter.get_node_text(name_node, bufnr)
+            if name == object_name then
+                return node
+            end
+        end
         for child in node:iter_children() do
-            local result = find_object(child)
+            local result = find_object_generic(child)
             if result then return result end
         end
         return nil
     end
 
-    local obj_node = find_object(root)
-    if not obj_node then
+    object_node = find_object_by_query()
+    if not object_node then
+        object_node = find_object_generic(root)
+    end
+
+    if not object_node then
         vim.api.nvim_err_writeln("Could not find object '" .. object_name .. "' in current buffer (treesitter).")
         return
     end
 
-    -- Get start/end row/col of the object node
-    local start_row, start_col, end_row, end_col = obj_node:range()
-    -- Replace the lines in buffer
+    local start_row, start_col, end_row, end_col = object_node:range()
     local new_lines = vim.split(new_code, "\n")
-    -- Use vim editing to replace lines
     vim.api.nvim_buf_set_lines(bufnr, start_row, end_row + 1, false, new_lines)
     vim.notify("Edited object: " .. object_name)
 end
