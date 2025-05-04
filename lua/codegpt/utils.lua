@@ -1,6 +1,7 @@
 Utils = {}
 
-local lsp_util = vim.lsp.util
+local ts_utils = require("nvim-treesitter.ts_utils")
+local parsers = require("nvim-treesitter.parsers")
 
 function Utils.get_filetype()
     local bufnr = vim.api.nvim_get_current_buf()
@@ -230,7 +231,7 @@ function Utils.parse_code_edit_instructions(text)
     return instructions
 end
 
-local function apply_code_edit(edit)
+function Utils.apply_code_edit_with_treesitter(edit)
     local object_name = edit.object
     local new_code = edit.content
     if not object_name or not new_code then
@@ -238,54 +239,51 @@ local function apply_code_edit(edit)
         return
     end
 
-    local params = lsp_util.make_position_params()
-    params.query = object_name
+    local bufnr = vim.api.nvim_get_current_buf()
+    local lang = parsers.get_buf_lang(bufnr)
+    if lang ~= "python" then
+        vim.api.nvim_err_writeln("Only Python is supported in this example.")
+        return
+    end
 
-    -- Use LSP workspace/symbol to find the object
-    vim.lsp.buf_request(0, 'workspace/symbol', {query = object_name}, function(err, result, ctx)
-        if err or not result or #result == 0 then
-            vim.api.nvim_err_writeln("Object '" .. object_name .. "' not found by LSP.")
-            return
-        end
+    local parser = parsers.get_parser(bufnr, lang)
+    local tree = parser:parse()[1]
+    local root = tree:root()
+    local found = false
 
-        -- Find the best match (by file, and by name)
-        local uri = vim.uri_from_bufnr(0)
-        local match = nil
-        for _, sym in ipairs(result) do
-            if sym.name == object_name and (sym.location and sym.location.uri == uri) then
-                match = sym
-                break
-            end
-        end
-        if not match then
-            -- fallback: accept first symbol with the correct name
-            for _, sym in ipairs(result) do
-                if sym.name == object_name then
-                    match = sym
-                    break
+    local function find_object(node)
+        -- For Python, look for function_definition or class_definition with matching name
+        local type = node:type()
+        if (type == "function_definition" or type == "class_definition") then
+            -- The first child is "def"/"class", second is the name
+            local name_node = node:field("name")[1]
+            if name_node then
+                local name = vim.treesitter.get_node_text(name_node, bufnr)
+                if name == object_name then
+                    return node
                 end
             end
         end
-        if not match then
-            vim.api.nvim_err_writeln("Could not find object '" .. object_name .. "' in current buffer.")
-            return
+        for child in node:iter_children() do
+            local result = find_object(child)
+            if result then return result end
         end
+        return nil
+    end
 
-        local range = match.location and match.location.range or match.range
-        if not range then
-            vim.api.nvim_err_writeln("No range found for object '" .. object_name .. "'.")
-            return
-        end
+    local obj_node = find_object(root)
+    if not obj_node then
+        vim.api.nvim_err_writeln("Could not find object '" .. object_name .. "' in current buffer (treesitter).")
+        return
+    end
 
-        local bufnr = vim.uri_to_bufnr(match.location and match.location.uri or match.uri)
-        local start_row = range.start.line
-        local end_row = range["end"].line
-
-        -- Replace lines in buffer
-        local lines = vim.split(new_code, "\n")
-        vim.api.nvim_buf_set_lines(bufnr, start_row, end_row + 1, false, lines)
-        vim.notify("Edited object: " .. object_name)
-    end)
+    -- Get start/end row/col of the object node
+    local start_row, start_col, end_row, end_col = obj_node:range()
+    -- Replace the lines in buffer
+    local new_lines = vim.split(new_code, "\n")
+    -- Use vim editing to replace lines
+    vim.api.nvim_buf_set_lines(bufnr, start_row, end_row + 1, false, new_lines)
+    vim.notify("Edited object: " .. object_name)
 end
 
 return Utils
