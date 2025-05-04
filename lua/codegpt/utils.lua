@@ -232,6 +232,18 @@ function Utils.parse_code_edit_instructions(text)
     return instructions
 end
 
+local function ensure_dir_exists(file_path)
+    local dir = file_path:match("(.+)/[^/]+$")
+    if dir then
+        local ok, err = os.execute('[ -d "'..dir..'" ] || mkdir -p "'..dir..'"')
+        if not ok then
+            vim.api.nvim_err_writeln("Could not create directory: " .. dir .. (err and (" ("..err..")") or ""))
+            return false
+        end
+    end
+    return true
+end
+
 function Utils.apply_code_edit_with_treesitter(edit)
     local object_name = edit.object
     local new_code = edit.content
@@ -241,16 +253,24 @@ function Utils.apply_code_edit_with_treesitter(edit)
         return
     end
 
-    local lines = {}
+    if not ensure_dir_exists(file) then return end
+
+    -- Touch file if not exists
     local f = io.open(file, "r")
     if not f then
-        vim.api.nvim_err_writeln("Could not open file: " .. file)
-        return
+        local wf = io.open(file, "w")
+        if wf then wf:close() end
+    else
+        f:close()
     end
-    for line in f:lines() do
-        table.insert(lines, line)
+
+    -- Read lines
+    local lines = {}
+    local rf = io.open(file, "r")
+    if rf then
+        for l in rf:lines() do table.insert(lines, l) end
+        rf:close()
     end
-    f:close()
 
     local lang = parsers.get_file_lang(file)
     local parser = vim.treesitter.get_string_parser(table.concat(lines, "\n"), lang)
