@@ -109,11 +109,6 @@ function Utils.parse_lines(response_text)
         vim.api.nvim_err_write("ChatGPT response: \n" .. response_text .. "\n")
     end
 
-    -- If response contains <code-edit>, parse as code edit instructions
-    if response_text:find("<code%-edit>") then
-        return Utils.parse_code_edit_instructions(response_text)
-    end
-
     return vim.fn.split(vim.trim(response_text), "\n")
 end
 
@@ -240,33 +235,39 @@ end
 function Utils.apply_code_edit_with_treesitter(edit)
     local object_name = edit.object
     local new_code = edit.content
+    local file = edit.file
     if not object_name or not new_code then
         vim.api.nvim_err_writeln("Missing object or content in code edit block.")
         return
     end
 
-    local bufnr = vim.api.nvim_get_current_buf()
-    local lang = parsers.get_buf_lang(bufnr)
-    local parser = parsers.get_parser(bufnr, lang)
+    local lines = {}
+    local f = io.open(file, "r")
+    if not f then
+        vim.api.nvim_err_writeln("Could not open file: " .. file)
+        return
+    end
+    for line in f:lines() do
+        table.insert(lines, line)
+    end
+    f:close()
+
+    local lang = parsers.get_file_lang(file)
+    local parser = vim.treesitter.get_string_parser(table.concat(lines, "\n"), lang)
     local tree = parser:parse()[1]
     local root = tree:root()
-    local found = false
-
-    -- Try to get a language-specific query for object definitions
-    local ok, query = pcall(vim.treesitter.query.get, lang, "highlights")
     local object_node = nil
+
+    local ok, query = pcall(vim.treesitter.query.get, lang, "highlights")
 
     local function find_object_by_query()
         if not query then return nil end
-        for id, node, metadata in query:iter_captures(root, bufnr, 0, -1) do
+        for id, node in query:iter_captures(root, 0, 0, -1) do
             local capture = query.captures[id]
-            -- Look for likely named captures
             if capture and (capture:find("function") or capture:find("class") or capture:find("method")) then
-                local name_node = nil
-                -- Try common field names for the name
-                name_node = node:field("name")[1] or node:field("identifier")[1] or nil
+                local name_node = node:field("name")[1] or node:field("identifier")[1] or nil
                 if name_node then
-                    local name = vim.treesitter.get_node_text(name_node, bufnr)
+                    local name = vim.treesitter.get_node_text(name_node, lines)
                     if name == object_name then
                         return node
                     end
@@ -277,10 +278,9 @@ function Utils.apply_code_edit_with_treesitter(edit)
     end
 
     local function find_object_generic(node)
-        -- Try to find any node with 'name' or 'identifier' field matching the object name
         local name_node = node:field("name")[1] or node:field("identifier")[1]
         if name_node then
-            local name = vim.treesitter.get_node_text(name_node, bufnr)
+            local name = vim.treesitter.get_node_text(name_node, lines)
             if name == object_name then
                 return node
             end
@@ -298,14 +298,33 @@ function Utils.apply_code_edit_with_treesitter(edit)
     end
 
     if not object_node then
-        vim.api.nvim_err_writeln("Could not find object '" .. object_name .. "' in current buffer (treesitter).")
-        return
+        vim.api.nvim_out_write(
+            "Could not find object '" .. object_name ..
+            "' in file (treesitter). Appending as new code at the end of the file.\n"
+        )
+        local new_lines = vim.split(new_code, "\n")
+        for _, l in ipairs(new_lines) do
+            table.insert(lines, l)
+        end
+    else
+        local start_row, _, end_row, _ = object_node:range()
+        local new_lines = vim.split(new_code, "\n")
+        for i = start_row + 1, end_row + 1 do
+            lines[i] = nil
+        end
+        for i, l in ipairs(new_lines) do
+            table.insert(lines, start_row + i, l)
+        end
     end
 
-    local start_row, start_col, end_row, end_col = object_node:range()
-    local new_lines = vim.split(new_code, "\n")
-    vim.api.nvim_buf_set_lines(bufnr, start_row, end_row + 1, false, new_lines)
-    vim.notify("Edited object: " .. object_name)
+    local wf = io.open(file, "w")
+    if not wf then
+        vim.api.nvim_err_writeln("Could not open file for writing: " .. file)
+        return
+    end
+    wf:write(table.concat(lines, "\n"))
+    wf:close()
+    vim.notify("Code edit applied to file: " .. file)
 end
 
 return Utils
