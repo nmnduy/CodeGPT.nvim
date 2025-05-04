@@ -244,6 +244,21 @@ local function ensure_dir_exists(file_path)
     return true
 end
 
+local function get_lang_from_filename(filename)
+    local ext = filename:match("^.+%.([a-zA-Z0-9_]+)$")
+    if not ext then return nil end
+    -- Map extension to filetype (as Neovim does)
+    local ft = vim.filetype.match({ filename = filename }) or ext
+    return parsers.ft_to_lang(ft) or ft
+end
+
+local function get_lang_from_filename(filename)
+    local ext = filename:match("^.+%.([a-zA-Z0-9_]+)$")
+    if not ext then return nil end
+    local ft = vim.filetype.match({ filename = filename }) or ext
+    return parsers.ft_to_lang(ft) or ft
+end
+
 function Utils.apply_code_edit_with_treesitter(edit)
     local object_name = edit.object
     local new_code = edit.content
@@ -272,7 +287,7 @@ function Utils.apply_code_edit_with_treesitter(edit)
         rf:close()
     end
 
-    local lang = parsers.get_file_lang(file)
+    local lang = get_lang_from_filename(file)
     local parser = vim.treesitter.get_string_parser(table.concat(lines, "\n"), lang)
     local tree = parser:parse()[1]
     local root = tree:root()
