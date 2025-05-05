@@ -269,6 +269,11 @@ function Utils.apply_code_edit_with_treesitter(edit)
     local object_name = edit.object
     local new_code = edit.content
     local file = edit.file
+
+    print("Object name:", object_name)
+    print("New code:", new_code)
+    print("File:", file)
+
     if not object_name or not new_code then
         vim.api.nvim_err_writeln("Missing object or content in code edit block.")
         return
