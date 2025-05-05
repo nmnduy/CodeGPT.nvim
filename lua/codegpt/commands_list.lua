@@ -88,8 +88,8 @@ function CommandsList.get_cmd_opts(cmd)
     opts = vim.tbl_extend("force", opts, user_set_opts)
     opts = vim.tbl_extend("force", cmd_default, opts)
 
-    if opts.list_files then
-        if vim.fn.executable('rg') == 0 then
+    if user_set_opts ~= nil and user_set_opts.list_files then
+        if vim.fn.executable('rg') == 1 then
             local files = vim.fn.system('rg --files')
             local original_message = opts.user_message_template
             opts.user_message_template = string.format("# Files:\n```\n%s```\n%s", files, original_message)
