@@ -63,29 +63,6 @@ end
 
 local function check_context_length(max_tokens, messages, model)
     -- Special handling for Google Gemini model messages structure
-    if model and model:match("google/gemini") then
-        local ok, total_length = Utils.get_accurate_tokens(vim.fn.json_encode(messages))
-
-        if not ok then
-            total_length = 0
-            -- For Gemini, the content is in a different format with type and text fields
-            for _, message in ipairs(messages) do
-                for _, content_part in ipairs(message.content) do
-                    if content_part.type == "text" then
-                        total_length = total_length + string.len(content_part.text)
-                    end
-                end
-                total_length = total_length + string.len(message.role)
-            end
-        end
-
-        if total_length >= max_tokens then
-            error("Total length of messages exceeds max_tokens: " .. total_length .. " > " .. max_tokens)
-        end
-
-        return max_tokens - total_length
-    end
-
     -- Standard token counting for other models
     local ok, total_length = Utils.get_accurate_tokens(vim.fn.json_encode(messages))
 
