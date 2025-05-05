@@ -320,52 +320,89 @@ function Utils.apply_code_edit_with_treesitter(edit)
     local parser = vim.treesitter.get_string_parser(table.concat(lines, "\n"), lang)
     local tree = parser:parse()[1]
     local root = tree:root()
-    local object_node = nil
 
-    local ok, query = pcall(vim.treesitter.query.get, lang, "highlights")
+    local function get_object_queries(lang)
+        local query_files = {"locals", "highlights"}
+        for _, qfile in ipairs(query_files) do
+            local ok, query = pcall(vim.treesitter.query.get, lang, qfile)
+            if ok and query then
+                return query
+            end
+        end
+        return nil
+    end
 
-    local function find_object_by_query()
-        if not query then return nil end
-        for id, node in query:iter_captures(root, 0, 0, -1) do
-            local capture = query.captures[id]
-            if capture and (capture:find("function") or capture:find("class") or capture:find("method")) then
-                local name_node = node:field("name")[1] or node:field("identifier")[1] or nil
-                if name_node then
-                    local name = vim.treesitter.get_node_text(name_node, lines)
-                    if name == object_name then
-                        return node
-                    end
+    local function extract_node_name(node, lines)
+        local name_fields = {"name", "identifier", "declaration", "value", "field"}
+        for _, field in ipairs(name_fields) do
+            local name_node = node:field(field)[1]
+            if name_node then
+                return vim.treesitter.get_node_text(name_node, lines)
+            end
+        end
+
+        local first_child = node:child(0)
+        if first_child then
+            local child_type = first_child:type()
+            if child_type:find("identifier") or child_type:find("name") then
+                return vim.treesitter.get_node_text(first_child, lines)
+            end
+        end
+
+        return nil
+    end
+
+    local function handle_special_cases(lang, root, lines, object_name)
+        -- Add language-specific handling here if needed
+        return nil
+    end
+
+    local function find_object_with_fallback(lang, root, lines, object_name)
+        -- Try special cases first
+        local special_case = handle_special_cases(lang, root, lines, object_name)
+        if special_case then return special_case end
+
+        -- Try query
+        local query = get_object_queries(lang)
+        if query then
+            for id, node in query:iter_captures(root, 0, 0, -1) do
+                local name = extract_node_name(node, lines)
+                if name == object_name then
+                    return node
                 end
             end
         end
-        return nil
-    end
 
-    local function find_object_generic(node)
-        local name_node = node:field("name")[1] or node:field("identifier")[1]
-        if name_node then
-            local name = vim.treesitter.get_node_text(name_node, lines)
+        -- Then try generic search
+        local function search_children(node)
+            local name = extract_node_name(node, lines)
             if name == object_name then
                 return node
             end
+
+            for child in node:iter_children() do
+                local result = search_children(child)
+                if result then return result end
+            end
+            return nil
         end
-        for child in node:iter_children() do
-            local result = find_object_generic(child)
-            if result then return result end
-        end
-        return nil
+
+        return search_children(root)
     end
 
-    object_node = find_object_by_query()
-    if not object_node then
-        object_node = find_object_generic(root)
-    end
+    local object_node = find_object_with_fallback(lang, root, lines, object_name)
 
     if not object_node then
-        vim.api.nvim_out_write(
-            "Could not find object '" .. object_name ..
-            "' in file (treesitter). Appending as new code at the end of the file.\n"
+        local msg = string.format(
+            "Could not find object '%s' in file (treesitter). Possible reasons:\n" ..
+            "- The object exists but has a different syntax structure\n" ..
+            "- The language parser doesn't recognize this construct\n" ..
+            "- The name is used in a different context\n\n" ..
+            "Appending as new code at the end of the file.",
+            object_name
         )
+        vim.api.nvim_out_write(msg)
+
         local new_lines = vim.split(new_code, "\n")
         for _, l in ipairs(new_lines) do
             table.insert(lines, l)
