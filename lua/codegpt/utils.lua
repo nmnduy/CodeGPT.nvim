@@ -323,7 +323,17 @@ function Utils.apply_code_edit_with_treesitter(edit)
     end
 
     local parser = vim.treesitter.get_string_parser(table.concat(lines, "\n"), lang)
-    local tree = parser:parse()[1]
+    if not parser then
+        vim.api.nvim_err_writeln("Failed to create parser for language: " .. lang)
+        return
+    end
+
+    local trees = parser:parse()
+    if not trees or #trees == 0 then
+        vim.api.nvim_err_writeln("Failed to parse file content")
+        return
+    end
+    local tree = trees[1]
     local root = tree:root()
 
     local function get_object_queries(lang)
@@ -338,11 +348,14 @@ function Utils.apply_code_edit_with_treesitter(edit)
     end
 
     local function extract_node_name(node, lines)
+        if not node then return nil end
+
         local name_fields = {"name", "identifier", "declaration", "value", "field"}
         for _, field in ipairs(name_fields) do
             local name_node = node:field(field)[1]
             if name_node then
-                return vim.treesitter.get_node_text(name_node, lines)
+                local text = vim.treesitter.get_node_text(name_node, lines)
+                if text then return text end
             end
         end
 
@@ -350,8 +363,16 @@ function Utils.apply_code_edit_with_treesitter(edit)
         if first_child then
             local child_type = first_child:type()
             if child_type:find("identifier") or child_type:find("name") then
-                return vim.treesitter.get_node_text(first_child, lines)
+                local text = vim.treesitter.get_node_text(first_child, lines)
+                if text then return text end
             end
+        end
+
+        local node_text = vim.treesitter.get_node_text(node, lines)
+        if node_text then
+            local first_part = node_text:match("^[%w_]+")
+            if first_part then return first_part end
+            return node_text
         end
 
         return nil
@@ -399,7 +420,7 @@ function Utils.apply_code_edit_with_treesitter(edit)
 
     if not object_node then
         local msg = string.format(
-            "Could not find object '%s' in file (treesitter). Possible reasons:\n" ..
+            "Could not find object '%s' in file (treesitter Possible reasons:\n" ..
             "- The object exists but has a different syntax structure\n" ..
             "- The language parser doesn't recognize this construct\n" ..
             "- The name is used in a different context\n\n" ..
