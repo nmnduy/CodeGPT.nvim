@@ -235,6 +235,11 @@ function Utils.parse_code_edit_instructions(text)
         end
     end
 
+    if #instructions == 0 then
+        print("Warning: Could not parse any code edit blocks in the input text:")
+        print(text)
+    end
+
     return instructions
 end
 
