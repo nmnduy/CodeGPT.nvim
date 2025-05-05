@@ -193,7 +193,10 @@ function Utils.parse_code_edit_instructions(text)
     local buffer = {}
 
     for i, line in ipairs(lines) do
-        line = vim.trim(line)
+        -- Only trim lines outside of content blocks
+        if cur_field ~= "content" then
+            line = vim.trim(line)
+        end
 
         -- Start of a code-edit block
         if line == "<code-edit>" then
