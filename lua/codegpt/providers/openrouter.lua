@@ -92,8 +92,8 @@ local function check_context_length(max_tokens, messages, model)
     if not ok then
         total_length = 0
         for _, message in ipairs(messages) do
-            total_length = total_length + string.len(message.content)
-            total_length = total_length + string.len(message.role)
+            total_length = total_length + string.len(message.content) / 4 -- 1 token is approximately 4 chars
+            total_length = total_length + 1 -- role is 1 token
         end
     end
 
