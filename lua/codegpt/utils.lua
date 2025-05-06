@@ -148,7 +148,7 @@ print(len(encoded))
 EOF
 ]], content), true)
     if ok and #result > 0 then
-        return ok, tonumber(result) / 4
+        return ok, tonumber(result)
     end
     return ok, 0
 end
