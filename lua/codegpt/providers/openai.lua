@@ -1,7 +1,5 @@
 local Render = require("codegpt.template_render")
--- local Utils = require("codegpt.utils") -- Handled by BaseProvider if needed, or keep if used elsewhere
--- local Api = require("codegpt.api") -- Handled by BaseProvider
-local BaseProvider = require("codegpt.providers.base") -- Require the base provider
+local BaseProvider = require("codegpt.providers.base")
 
 local OpenAIProvider = {}
 
@@ -75,18 +73,18 @@ function OpenAIProvider.make_headers()
     return { Content_Type = "application/json", Authorization = "Bearer " .. token }
 end
 
--- This is the specific handle_response for OpenAI
 function OpenAIProvider.handle_response(json, cb)
     BaseProvider.handle_response_structure(json, cb, "OpenAI")
 end
 
+
 function OpenAIProvider.make_call(payload, cb)
-    local url = vim.g["codegpt_chat_completions_url"] or "https://api.openai.com/v1/chat/completions" -- Add a default
+    local url = vim.g["codegpt_chat_completions_url"] or "https://api.openai.com/v1/chat/completions"
     BaseProvider.make_api_call(
         url,
         payload,
         OpenAIProvider.make_headers,
-        OpenAIProvider.handle_response, -- Pass its own handler
+        function(json_res, inner_cb) OpenAIProvider.handle_response(json_res, inner_cb) end, -- Ensure context for provider name in error reporting
         cb
     )
 end

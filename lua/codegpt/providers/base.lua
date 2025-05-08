@@ -1,85 +1,160 @@
-local curl = require("plenary.curl")
-local Utils = require("codegpt.utils")
 local Api = require("codegpt.api")
+local Utils = require("codegpt.utils")
+
+-- Attempt to require the db module
+local Db_ok, Db = pcall(require, "codegpt.db")
+if not Db_ok then
+    -- Db will be nil, checks later will handle this
+end
 
 local BaseProvider = {}
 
--- This function is almost identical in both, so we make it generic.
--- The specific provider will pass its own handle_response function.
-local function base_curl_callback(response, cb, specific_handle_response_fn)
-    local status = response.status
-    local body = response.body
-    if status ~= 200 then
-        body = body and body:gsub("%s+", " ") or "Unknown error"
-        print("Error: " .. status .. " " .. body)
-        Api.run_finished_hook() -- Ensure hook runs on error
-        return
-    end
+-- Module-level variable to store context for the upcoming API call
+local current_api_call_log_context = {}
 
-    if body == nil or body == "" then
-        print("Error: No body")
-        Api.run_finished_hook() -- Ensure hook runs on error
-        return
-    end
-
-    vim.schedule_wrap(function(msg)
-        local json = vim.fn.json_decode(msg)
-        specific_handle_response_fn(json, cb) -- Call the specific provider's handler
-    end)(body)
-
-    Api.run_finished_hook()
+-- Function to be called by commands.lua before initiating an API call chain
+function BaseProvider.set_current_api_call_log_context(context)
+    -- context should be a table like { command_name = "...", provider_name = "..." }
+    current_api_call_log_context = context or {}
 end
 
--- This function is also very similar.
--- The specific provider will pass its own handle_response function.
-function BaseProvider.handle_response_structure(json, cb, provider_name)
-    if json == nil then
-        print(provider_name .. " Error: Response empty")
-    elseif json.error then
-        print(provider_name .. " Error: " .. (json.error.message or vim.fn.json_encode(json.error)))
-    elseif not json.choices or 0 == #json.choices or not json.choices[1].message then
-        print(provider_name .. " Error: Invalid response structure " .. vim.fn.json_encode(json))
-    else
-        local response_text = json.choices[1].message.content
-
-        if response_text ~= nil then
-            if type(response_text) ~= "string" or response_text == "" then
-                print(provider_name .. " Error: No response text or invalid type " .. type(response_text))
-                print(vim.inspect(response_text))
-            else
-                local bufnr = vim.api.nvim_get_current_buf()
-                if vim.g["codegpt_clear_visual_selection"] then
-                    vim.api.nvim_buf_set_mark(bufnr, "<", 0, 0, {})
-                    vim.api.nvim_buf_set_mark(bufnr, ">", 0, 0, {})
-                end
-                cb(Utils.parse_lines(response_text))
-            end
+function BaseProvider.handle_response_structure(json_response, cb, provider_name_for_error)
+    local choices = json_response and json_response.choices
+    if choices and #choices > 0 then
+        local first_choice = choices[1]
+        local message_content = ""
+        if first_choice.message and first_choice.message.content then
+            message_content = first_choice.message.content
+        elseif first_choice.text then
+            message_content = first_choice.text
         else
-            print(provider_name .. " Error: No message content in response")
+            local err_src = provider_name_for_error or "API"
+            Api.set_status("error", err_src .. "_response_error: Unexpected response structure")
+            vim.notify(err_src .. ": Unexpected response structure: " .. vim.inspect(first_choice), vim.log.levels.ERROR)
+            if cb then cb(nil) end
+            return
         end
+
+        local lines = vim.split(message_content, "\n", { plain = true, trimempty = false })
+        Api.set_status("success")
+        if cb then cb(lines) end
+    elseif json_response and json_response.error then
+        local err_src = provider_name_for_error or "API"
+        local err_msg = err_src .. "_api_error: " .. (json_response.error.message or vim.inspect(json_response.error))
+        Api.set_status("error", err_msg)
+        vim.notify(err_msg, vim.log.levels.ERROR)
+        if cb then cb(nil) end
+    else
+        local err_src = provider_name_for_error or "API"
+        local err_msg = err_src .. "_response_error: No choices found or unexpected JSON structure"
+        Api.set_status("error", err_msg)
+        vim.notify(err_msg .. ": " .. vim.inspect(json_response), vim.log.levels.ERROR)
+        if cb then cb(nil) end
     end
 end
 
+-- make_api_call no longer needs provider_name and command_name as direct arguments
+function BaseProvider.make_api_call(url, payload, make_headers_fn, handle_response_fn, cb)
+    -- Capture the current context for this specific call and its closures.
+    -- This ensures that if another command quickly follows, its context won't interfere with this one.
+    local captured_log_context = current_api_call_log_context
+    local provider_name_for_status = captured_log_context.provider_name or "unknown_provider"
+    local command_name_for_log = captured_log_context.command_name or "unknown_command" -- For logging
 
--- Generic make_call function
--- It takes the URL and the make_headers function, and the specific handle_response function from the child provider.
-function BaseProvider.make_api_call(url, payload, make_headers_fn, specific_handle_response_fn, cb)
-    local payload_str = vim.fn.json_encode(payload)
-    local headers = make_headers_fn()
-    if not headers then return end -- make_headers_fn might error out
+    Api.set_status("loading", "Waiting for " .. provider_name_for_status .. "...")
 
-    Api.run_started_hook()
-    curl.post(url, {
-        body = payload_str,
-        headers = headers,
-        callback = function(response)
-            -- Pass the specific_handle_response_fn to the base_curl_callback
-            base_curl_callback(response, cb, specific_handle_response_fn)
+    local headers_table, err = pcall(make_headers_fn)
+    if not headers_table then
+        Api.set_status("error", "Failed to create headers: " .. (err or "unknown error"))
+        vim.notify("CodeGPT: Failed to create headers: " .. (err or "unknown error"), vim.log.levels.ERROR)
+        if cb then cb(nil) end
+        return
+    end
+
+    local headers_curl_args = {}
+    for key, value in pairs(headers_table) do
+        table.insert(headers_curl_args, "-H")
+        table.insert(headers_curl_args, string.format("%s: %s", key, value))
+    end
+
+    local cmd_array = {
+        "curl",
+        "-sS",
+        "-X",
+        "POST",
+        url,
+    }
+    vim.list_extend(cmd_array, headers_curl_args)
+    table.insert(cmd_array, "-d")
+    table.insert(cmd_array, vim.fn.json_encode(payload))
+
+    local stdout_chunks = {}
+    local stderr_chunks = {}
+
+    vim.fn.jobstart(cmd_array, {
+        on_stdout = function(_, data, _)
+            if data then
+                for _, line in ipairs(data) do
+                    table.insert(stdout_chunks, line)
+                end
+            end
         end,
-        on_error = function(err)
-            print('cURL Error:', err.message)
-            Api.run_finished_hook()
+        on_stderr = function(_, data, _)
+            if data then
+                for _, line in ipairs(data) do
+                    if line ~= "" then
+                        table.insert(stderr_chunks, line)
+                    end
+                end
+            end
         end,
+        on_exit = function(_, exit_code, _)
+            local full_stdout_response = table.concat(stdout_chunks, "\n")
+            local full_stderr_response = table.concat(stderr_chunks, "\n")
+
+            -- Use the captured_log_context for provider and command names
+            local provider_name_from_context = captured_log_context.provider_name or "unknown_provider"
+            local command_name_from_context = captured_log_context.command_name or "unknown_command"
+
+            if exit_code == 0 then
+                if vim.g.codegpt_save_output == true then
+                    if Db_ok and Db and Db.save_api_log then
+                        local log_data = {
+                            timestamp = os.time(),
+                            provider = provider_name_from_context, -- Use from captured context
+                            command = command_name_from_context,  -- Use from captured context
+                            url = url,
+                            request = payload, -- 'payload' is captured by this closure
+                            response = full_stdout_response,
+                        }
+                        local save_ok, save_err = pcall(Db.save_api_log, log_data)
+                        if not save_ok then
+                            vim.notify("CodeGPT: Failed to save API call to DB: " .. (save_err or "unknown error"), vim.log.levels.ERROR)
+                        end
+                    elseif not (Db_ok and Db and Db.save_api_log) then
+                        vim.notify("CodeGPT: DB logging enabled but 'codegpt.db' or 'save_api_log' is not available.", vim.log.levels.WARN)
+                    end
+                end
+
+                local ok, json_response = pcall(vim.fn.json_decode, full_stdout_response)
+                if not ok then
+                    local err_msg = provider_name_from_context .. " JSON decode error: " .. tostring(json_response)
+                    Api.set_status("error", err_msg)
+                    vim.notify("CodeGPT: " .. err_msg .. "\nRaw Response:\n" .. full_stdout_response, vim.log.levels.ERROR)
+                    if cb then cb(nil) end
+                    return
+                end
+                -- Pass provider_name_from_context to handle_response_structure for consistent error reporting
+                handle_response_fn(json_response, cb, provider_name_from_context)
+            else
+                local err_msg = string.format("%s API call failed (exit %d). stderr: %s", provider_name_from_context, exit_code, full_stderr_response)
+                Api.set_status("error", err_msg)
+                vim.notify("CodeGPT: " .. err_msg, vim.log.levels.ERROR)
+                if cb then cb(nil) end
+            end
+        end,
+        pty = false,
+        clear_env = false,
     })
 end
 

@@ -102,7 +102,6 @@ function OpenRouterProvider.make_headers()
     return { Content_Type = "application/json", Authorization = "Bearer " .. token }
 end
 
--- This is the specific handle_response for OpenRouter
 function OpenRouterProvider.handle_response(json, cb)
     BaseProvider.handle_response_structure(json, cb, "OpenRouter")
 end
@@ -113,7 +112,7 @@ function OpenRouterProvider.make_call(payload, cb)
         url,
         payload,
         OpenRouterProvider.make_headers,
-        OpenRouterProvider.handle_response, -- Pass its own handler
+        function(json_res, inner_cb) OpenRouterProvider.handle_response(json_res, inner_cb) end, -- Ensure context
         cb
     )
 end
