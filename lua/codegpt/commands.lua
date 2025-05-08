@@ -16,16 +16,16 @@ function Commands.run_cmd(command_name, command_args, text_selection)
 	end
 
     -- Determine provider name.
-    -- This assumes vim.g.codegpt_provider holds the string name (e.g., "openai", "openrouter").
+    -- This assumes vim.g.codegpt_api_provider holds the string name (e.g., "openai", "openrouter").
     -- If Providers.get_current_provider_name() exists and is more reliable, use that.
-    local provider_name_str = vim.g.codegpt_provider
+    local provider_name_str = vim.g.codegpt_api_provider
     if not provider_name_str or provider_name_str == "" then
         -- Attempt to get it from Providers module if available and vim.g variable is not set
         if Providers and Providers.get_current_provider_name then
              provider_name_str = Providers.get_current_provider_name()
         else
             provider_name_str = "unknown" -- Fallback
-            vim.notify("CodeGPT: vim.g.codegpt_provider is not set. Provider name for logging will be 'unknown'.", vim.log.levels.WARN)
+            vim.notify("CodeGPT: vim.g.codegpt_api_provider is not set. Provider name for logging will be 'unknown'.", vim.log.levels.WARN)
         end
     end
 
