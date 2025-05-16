@@ -1,11 +1,10 @@
+local curl = require("plenary.curl")
 local Render = require("codegpt.template_render")
--- local Utils = require("codegpt.utils") -- Handled by BaseProvider if needed, or keep if used elsewhere
--- local Api = require("codegpt.api") -- Handled by BaseProvider
-local BaseProvider = require("codegpt.providers.base") -- Require the base provider
+local Utils = require("codegpt.utils")
+local Api = require("codegpt.api")
 
-local OpenAIProvider = {}
+OpenAIProvider = {}
 
--- generate_messages is simpler for OpenAI (no image handling in this version)
 local function generate_messages(command, cmd_opts, command_args, text_selection)
     local system_message = Render.render(command, cmd_opts.system_message_template, command_args, text_selection,
         cmd_opts)
@@ -15,42 +14,31 @@ local function generate_messages(command, cmd_opts, command_args, text_selection
     if system_message ~= nil and system_message ~= "" then
         table.insert(messages, { role = "system", content = system_message })
     end
+
     if user_message ~= nil and user_message ~= "" then
         table.insert(messages, { role = "user", content = user_message })
     end
+
     return messages
 end
 
--- get_token_count is specific to OpenAI's simpler counting
+
 local function get_token_count(messages)
     local token_count = 0
     for _, message in ipairs(messages) do
-        if type(message.content) == "string" then -- Ensure content is a string
-            token_count = token_count + #message.content / 4
-        end
+        token_count = token_count + #message.content
     end
-    return token_count -- This is a very rough estimate, not real tokens.
+    return token_count
 end
 
 function OpenAIProvider.make_request(command, cmd_opts, command_args, text_selection)
     local messages = generate_messages(command, cmd_opts, command_args, text_selection)
-    local estimated_input_tokens = get_token_count(messages) -- This now uses the char_count / 4 estimate
+    local context_size = get_token_count(messages)
+    local max_tokens = cmd_opts.max_tokens
 
-    -- Assuming cmd_opts.max_tokens refers to the model's total context window limit (e.g., 4096, 8192).
-    local model_context_limit = cmd_opts.max_tokens
-
-    -- If cmd_opts.max_tokens is defined, perform a client-side check.
-    -- The original condition was likely based on context_size being a raw character count.
-    -- If context_size (as chars) > model_context_limit (as tokens) * 3 (chars/token estimate),
-    -- it meant: estimated_tokens_method_A > model_context_limit.
-    -- With estimated_input_tokens = char_count / 4, the equivalent check becomes:
-    -- estimated_input_tokens > model_context_limit * (3/4)
-    -- This checks if the estimated input tokens exceed 75% of the model's total capacity.
-    if model_context_limit and estimated_input_tokens > model_context_limit * 0.75 then
-        -- This client-side check is a rough estimate.
-        -- It's often better to rely on the API for precise context length errors.
-        -- The error message (if uncommented) should reflect that estimated_input_tokens is an token estimate.
-        -- error("Estimated input token count (" .. estimated_input_tokens .. ") might exceed ~75% of model's capacity (" .. model_context_limit .. " tokens). Threshold: " .. model_context_limit * 0.75 .. " tokens.")
+    if context_size > cmd_opts.max_tokens then
+        error("Context size is: " .. context_size .. " which is greater than the context size limit: " .. max_tokens)
+        return
     end
 
     local request = {
@@ -58,37 +46,89 @@ function OpenAIProvider.make_request(command, cmd_opts, command_args, text_selec
         n = cmd_opts.number_of_choices,
         model = cmd_opts.model,
         messages = messages,
-        max_tokens = cmd_opts.max_output_tokens, -- This is the max tokens for the generated *output*.
+        max_tokens = cmd_opts.max_output_tokens,
     }
-    request = vim.tbl_extend("force", request, cmd_opts.extra_params or {})
+
+    request = vim.tbl_extend("force", request, cmd_opts.extra_params)
     return request
 end
 
+local function curl_callback(response, cb)
+    local status = response.status
+    local body = response.body
+    if status ~= 200 then
+        body = body:gsub("%s+", " ")
+        print("Error: " .. status .. " " .. body)
+        return
+    end
+
+    if body == nil or body == "" then
+        print("Error: No body")
+        return
+    end
+
+    vim.schedule_wrap(function(msg)
+        local json = vim.fn.json_decode(msg)
+        OpenAIProvider.handle_response(json, cb)
+    end)(body)
+
+    Api.run_finished_hook()
+end
+
 function OpenAIProvider.make_headers()
-    local token = vim.g["codegpt_openai_api_key"] or vim.env.OPENAI_API_KEY -- Prefer vim.g, fallback to env
+    local token = vim.g["codegpt_openai_api_key"]
     if not token then
         error(
-            "OpenAI API Key not found, set vim.g.codegpt_openai_api_key or env var OPENAI_API_KEY"
+            "OpenAIApi Key not found, set in vim with 'codegpt_openai_api_key' or as the env variable 'OPENAI_API_KEY'"
         )
-        return nil -- Indicate error
     end
+
     return { Content_Type = "application/json", Authorization = "Bearer " .. token }
 end
 
--- This is the specific handle_response for OpenAI
 function OpenAIProvider.handle_response(json, cb)
-    BaseProvider.handle_response_structure(json, cb, "OpenAI")
+    if json == nil then
+        print("Response empty")
+    elseif json.error then
+        print("Error: " .. json.error.message)
+    elseif not json.choices or 0 == #json.choices or not json.choices[1].message then
+        print("Error: " .. vim.fn.json_encode(json))
+    else
+        local response_text = json.choices[1].message.content
+
+        if response_text ~= nil then
+            if type(response_text) ~= "string" or response_text == "" then
+                print("Error: No response text " .. type(response_text))
+            else
+                local bufnr = vim.api.nvim_get_current_buf()
+                if vim.g["codegpt_clear_visual_selection"] then
+                    vim.api.nvim_buf_set_mark(bufnr, "<", 0, 0, {})
+                    vim.api.nvim_buf_set_mark(bufnr, ">", 0, 0, {})
+                end
+                cb(Utils.parse_lines(response_text))
+            end
+        else
+            print("Error: No message")
+        end
+    end
 end
 
 function OpenAIProvider.make_call(payload, cb)
-    local url = vim.g["codegpt_chat_completions_url"] or "https://api.openai.com/v1/chat/completions" -- Add a default
-    BaseProvider.make_api_call(
-        url,
-        payload,
-        OpenAIProvider.make_headers,
-        OpenAIProvider.handle_response, -- Pass its own handler
-        cb
-    )
+    local payload_str = vim.fn.json_encode(payload)
+    local url = vim.g["codegpt_chat_completions_url"]
+    local headers = OpenAIProvider.make_headers()
+    Api.run_started_hook()
+    curl.post(url, {
+        body = payload_str,
+        headers = headers,
+        callback = function(response)
+            curl_callback(response, cb)
+        end,
+        on_error = function(err)
+            print('Error:', err.message)
+            Api.run_finished_hook()
+        end,
+    })
 end
 
 return OpenAIProvider
