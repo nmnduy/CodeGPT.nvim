@@ -116,4 +116,106 @@ function M.replace_snippet(file_path, old_snippet, new_snippet)
   util.write_lines(file_path, vim.split(replaced, "\n"))
 end
 
+function M.get_prompt()
+  local rg_check = os.execute("command -v rg > /dev/null 2>&1")
+  if not rg_check or rg_check ~= 0 then
+    print("Warning: 'rg' is not installed or not in PATH.")
+    return ""
+  end
+  local handle = io.popen("rg --files")
+  local file_list = handle:read("*a")
+  handle:close()
+  file_list = file_list:gsub("%s+$", "")
+  local file_block = "```\n" .. file_list .. "\n```"
+  return file_block .. "\n" .. prompt
+end
+
+local function trim(s)
+  return (s:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+function M.parse_and_apply_actions(xml_str)
+  local stack = {}
+  local actions = {}
+
+  local i = 1
+  local len = #xml_str
+
+  while i <= len do
+    local tag_start, tag_end, closing, tag_name, attrs = xml_str:find("<(/?)([%w_]+)(.-)>", i)
+    if tag_start then
+      if tag_start > i then
+        -- Collect text between tags
+        local text = xml_str:sub(i, tag_start-1)
+        if #stack > 0 then
+          local top = stack[#stack]
+          if not top.content then top.content = "" end
+          top.content = top.content .. text
+        end
+      end
+
+      if closing == "/" then
+        -- Closing tag: pop stack, assign content to parent
+        local top = table.remove(stack)
+        top.content = top.content or ""
+        if #stack > 0 then
+          local parent = stack[#stack]
+          if not parent.children then parent.children = {} end
+          table.insert(parent.children, top)
+        else
+          table.insert(actions, top)
+        end
+      else
+        -- Opening tag: push to stack
+        local node = {tag=tag_name}
+        -- parse attributes if needed (not used in examples)
+        table.insert(stack, node)
+      end
+      i = tag_end + 1
+    else
+      -- No more tags, just trailing text
+      if #stack > 0 then
+        local top = stack[#stack]
+        local text = xml_str:sub(i)
+        top.content = (top.content or "") .. text
+      end
+      break
+    end
+  end
+
+  -- flatten single-child content fields (e.g. <file>xyz</file>)
+  local function node_to_table(node)
+    if node.children then
+      local t = {}
+      for _, child in ipairs(node.children) do
+        t[child.tag] = node_to_table(child)
+      end
+      return t
+    else
+      return trim(node.content or "")
+    end
+  end
+
+  for _, act in ipairs(actions) do
+    if act.tag == "action" then
+      local t = node_to_table(act)
+      local action_type = t.type or act.type or ""
+      if action_type == "replace_definition" then
+        -- <file>, <name>, <def_type>, <lang>, <code>
+        M.replace_definition(t.file, t.name, t.def_type, t.code, t.lang)
+      elseif action_type == "remove_definition" then
+        M.remove_definition(t.file, t.name, t.def_type, t.lang)
+      elseif action_type == "add_content" then
+        M.add_content(t.file, t.code)
+      elseif action_type == "remove_file" then
+        M.remove_file(t.file)
+      elseif action_type == "replace_snippet" then
+        M.replace_snippet(t.file, t.old_snippet, t.new_snippet)
+      else
+        error("Unknown action type: " .. tostring(action_type))
+      end
+    end
+  end
+end
+
 return M
