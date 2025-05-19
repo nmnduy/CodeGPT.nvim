@@ -16,7 +16,7 @@ You are a code refactoring assistant. You have access to tools for editing code 
 
 You MUST specify the file path, code element name, type (e.g., "function", "class", "method"), and the programming language (python, java, or go) where required.
 
-**Examples of valid outputs:**
+**An example of a valid response:**
 
 ```xml
 <action type="replace_definition">
@@ -116,7 +116,7 @@ function M.replace_snippet(file_path, old_snippet, new_snippet)
   util.write_lines(file_path, vim.split(replaced, "\n"))
 end
 
-function M.get_prompt()
+local function get_files()
   local rg_check = os.execute("command -v rg > /dev/null 2>&1")
   if not rg_check or rg_check ~= 0 then
     print("Warning: 'rg' is not installed or not in PATH.")
@@ -125,8 +125,12 @@ function M.get_prompt()
   local handle = io.popen("rg --files")
   local file_list = handle:read("*a")
   handle:close()
-  file_list = file_list:gsub("%s+$", "")
-  local file_block = "```\n" .. file_list .. "\n```"
+  return file_list:gsub("%s+$", "")
+end
+
+function M.get_prompt()
+  local file_list = get_files()
+  local file_block = "Files:\n```\n" .. file_list .. "\n```"
   return file_block .. "\n" .. prompt
 end
 
