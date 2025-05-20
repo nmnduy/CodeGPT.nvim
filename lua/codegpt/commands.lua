@@ -24,7 +24,8 @@ function Commands.run_cmd(command, command_args, text_selection)
     local request = Providers.get_provider().make_request(command, cmd_opts, command_args, text_selection)
     Providers.get_provider().make_call(request, function(lines)
       -- lines: XML string from code agent
-      CodeEdit.parse_and_apply_actions(lines)
+      will_write_tmp_file = true
+      CodeEdit.parse_and_apply_actions(lines, will_write_tmp_file)
     end)
     return
   else
