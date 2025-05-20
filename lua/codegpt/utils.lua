@@ -224,3 +224,5 @@ local function get_lang_from_filename(filename)
     local ft = vim.filetype.match({ filename = filename }) or ext
     return parsers.ft_to_lang(ft) or ft
 end
+
+return Utils
