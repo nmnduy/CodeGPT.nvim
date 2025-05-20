@@ -198,65 +198,6 @@ function Utils.read_file_as_base64(file_path)
     return base64_str
 end
 
-function Utils.parse_code_edit_instructions(text)
-    local instructions = {}
-    local stack = {}
-    local lines = vim.fn.split(text, "\n")
-    local cur_edit = nil
-    local cur_field = nil
-    local buffer = {}
-
-    for i, line in ipairs(lines) do
-        -- Only trim lines outside of content blocks
-        if cur_field ~= "content" then
-            line = vim.trim(line)
-        end
-
-        -- Start of a code-edit block
-        if line == "<code-edit>" then
-            table.insert(stack, "<code-edit>")
-            cur_edit = {file = nil, object = nil, content = nil}
-            cur_field = nil
-            buffer = {}
-        -- End of code-edit block
-        elseif line == "</code-edit>" then
-            if cur_field and #buffer > 0 then
-                cur_edit[cur_field] = table.concat(buffer, "\n")
-            end
-            table.insert(instructions, cur_edit)
-            table.remove(stack)
-            cur_edit = nil
-            cur_field = nil
-            buffer = {}
-        -- Start of a field
-        elseif line == "<file>" or line == "<object>" or line == "<content>" then
-            if cur_field and #buffer > 0 then
-                cur_edit[cur_field] = table.concat(buffer, "\n")
-            end
-            cur_field = line:match("^<([^>]+)>$")
-            buffer = {}
-        -- End of a field
-        elseif line == "</file>" or line == "</object>" or line == "</content>" then
-            -- Save the buffer to the field in cur_edit
-            if cur_field and #buffer > 0 then
-                cur_edit[cur_field] = table.concat(buffer, "\n")
-            end
-            cur_field = nil
-            buffer = {}
-        -- Inside a field
-        elseif cur_field then
-            table.insert(buffer, line)
-        end
-    end
-
-    if #instructions == 0 then
-        print("Warning: Could not parse any code edit blocks in the input text:")
-        print(text)
-    end
-
-    return instructions
-end
-
 local function ensure_dir_exists(file_path)
     local dir = file_path:match("(.+)/[^/]+$")
     if dir then
