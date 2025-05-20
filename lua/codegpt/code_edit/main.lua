@@ -153,43 +153,60 @@ local function trim(s)
   return (s:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
+local function write_tempfile(contents)
+  local tmpname = os.tmpname()
+  if not tmpname:match("%.xml$") then
+    tmpname = tmpname .. ".xml"
+  end
+  local f = assert(io.open(tmpname, "w"))
+  f:write(contents)
+  f:close()
+  print("Failed edit instructions saved to tempfile: " .. tmpname)
+end
+
 function M.parse_and_apply_actions(xml_str)
   local actions = {}
 
-  for code_edit_block in xml_str:gmatch("<code%-edit>(.-)</code%-edit>") do
-    local t = {}
-    for tag in pairs {action=1, file=1, name=1, def_type=1, lang=1, old=1, new=1} do
-      local pat = string.format("<%s>(.-)</%s>", tag, tag)
-      local val = code_edit_block:match(pat)
-      if val then t[tag] = trim(val) end
+  local ok, err = pcall(function()
+    for code_edit_block in xml_str:gmatch("<code%-edit>(.-)</code%-edit>") do
+      local t = {}
+      for tag in pairs {action=1, file=1, name=1, def_type=1, lang=1, old=1, new=1} do
+        local pat = string.format("<%s>(.-)</%s>", tag, tag)
+        local val = code_edit_block:match(pat)
+        if val then t[tag] = trim(val) end
+      end
+
+      local code_start = code_edit_block:find("<code>")
+      local code_end = code_edit_block:find("</code>")
+      if code_start and code_end and code_end > code_start+5 then
+        t.code = code_edit_block:sub(code_start+6, code_end-1)
+        t.code = trim(t.code)
+      end
+
+      table.insert(actions, t)
     end
 
-    -- code tag can contain multiline, even with closing tags for other languages
-    local code_start = code_edit_block:find("<code>")
-    local code_end = code_edit_block:find("</code>")
-    if code_start and code_end and code_end > code_start+5 then
-      t.code = code_edit_block:sub(code_start+6, code_end-1)
-      t.code = trim(t.code)
+    for _, t in ipairs(actions) do
+      local act = t.action
+      if act == "replace_definition" then
+        M.replace_definition(t.file, t.name, t.def_type, t.code, t.lang)
+      elseif act == "remove_definition" then
+        M.remove_definition(t.file, t.name, t.def_type, t.lang)
+      elseif act == "add_at_end" then
+        M.add_content(t.file, t.code)
+      elseif act == "remove_file" then
+        M.remove_file(t.file)
+      elseif act == "replace_snippet" then
+        M.replace_snippet(t.file, t.old, t.new)
+      else
+        error("Unknown action: " .. tostring(act))
+      end
     end
+  end)
 
-    table.insert(actions, t)
-  end
-
-  for _, t in ipairs(actions) do
-    local act = t.action
-    if act == "replace_definition" then
-      M.replace_definition(t.file, t.name, t.def_type, t.code, t.lang)
-    elseif act == "remove_definition" then
-      M.remove_definition(t.file, t.name, t.def_type, t.lang)
-    elseif act == "add_at_end" then
-      M.add_content(t.file, t.code)
-    elseif act == "remove_file" then
-      M.remove_file(t.file)
-    elseif act == "replace_snippet" then
-      M.replace_snippet(t.file, t.old, t.new)
-    else
-      error("Unknown action: " .. tostring(act))
-    end
+  if not ok then
+    write_tempfile(xml_str)
+    error("Failed to parse/apply actions: " .. tostring(err))
   end
 end
 
