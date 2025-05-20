@@ -1,6 +1,7 @@
 local util = require "codegpt.code_edit.util"
 local python = require "codegpt.code_edit.python"
 local java = require "codegpt.code_edit.java"
+local typescript = require "codegpt.code_edit.typescript"
 local go = require "codegpt.code_edit.go"
 
 prompt = [[
