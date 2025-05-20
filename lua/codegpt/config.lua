@@ -40,6 +40,10 @@ vim.g["codegpt_horizontal_popup_size"] = "20%"
 vim.g["codegpt_vertical_popup_size"] = "20%"
 
 vim.g["codegpt_commands_defaults"] = {
+    ["agentic"] = {
+        user_message_template =
+        "I have the following {{language}} code snippet: ```{{filetype}}\n{{text_selection}}```\nComplete the rest. Use best practices and write really good documentation. {{language_instructions}} Only return the code snippet and nothing else.",
+    },
     ["completion"] = {
         user_message_template =
         "I have the following {{language}} code snippet: ```{{filetype}}\n{{text_selection}}```\nComplete the rest. Use best practices and write really good documentation. {{language_instructions}} Only return the code snippet and nothing else.",

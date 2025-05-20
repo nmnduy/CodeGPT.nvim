@@ -159,7 +159,9 @@ local function write_tempfile(contents)
     tmpname = tmpname .. ".xml"
   end
   local f = assert(io.open(tmpname, "w"))
-  f:write(contents)
+  for _, line in ipairs(contents) do
+    f:write(line, "\n")
+  end
   f:close()
   print("Edit instructions saved to: " .. tmpname)
 end
@@ -189,14 +191,19 @@ function M.parse_and_apply_actions(xml_str)
     for _, t in ipairs(actions) do
       local act = t.action
       if act == "replace_definition" then
+        print(string.format("[replace_definition] file: %s, def_type: %s", tostring(t.file), tostring(t.def_type)))
         M.replace_definition(t.file, t.name, t.def_type, t.code, t.lang)
       elseif act == "remove_definition" then
+        print(string.format("[remove_definition] file: %s, def_type: %s", tostring(t.file), tostring(t.def_type)))
         M.remove_definition(t.file, t.name, t.def_type, t.lang)
       elseif act == "add_at_end" then
+        print(string.format("[add_at_end] file: %s", tostring(t.file)))
         M.add_content(t.file, t.code)
       elseif act == "remove_file" then
+        print(string.format("[remove_file] file: %s", tostring(t.file)))
         M.remove_file(t.file)
       elseif act == "replace_snippet" then
+        print(string.format("[replace_snippet] file: %s | old (first 30): %s", tostring(t.file), string.sub(t.old, 1, 30)))
         M.replace_snippet(t.file, t.old, t.new)
       else
         error("Unknown action: " .. tostring(act))
@@ -205,10 +212,6 @@ function M.parse_and_apply_actions(xml_str)
   end)
 
   write_tempfile(xml_str)
-  -- if not ok then
-  --   write_tempfile(xml_str)
-  --   error("Failed to parse/apply actions: " .. tostring(err))
-  -- end
 end
 
 return M
