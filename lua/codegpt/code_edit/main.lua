@@ -92,6 +92,14 @@ local handlers = {
 }
 
 function M.create_file(file_path, content)
+  local dir = file_path:match("(.+)/[^/]+$")
+  if dir then
+    local current = ""
+    for part in dir:gmatch("[^/]+") do
+      current = current == "" and part or (current .. "/" .. part)
+      os.execute('mkdir -p "' .. current .. '"')
+    end
+  end
   local f = assert(io.open(file_path, "w"))
   f:write(content)
   if content:sub(-1) ~= "\n" then
@@ -345,7 +353,7 @@ end
 
 local function parse_code_edit_block(content)
   local lines = {}
-  for line in content:gmatch("[^\r\n]+") do table.insert(lines, line) end
+  lines = vim.fn.split(content, '\n', true)
   for i, line in ipairs(lines) do
     local action = parse_action(line)
     -- if no action then it's not a valid code edit block and
@@ -381,19 +389,16 @@ function M.parse_and_apply_actions(xml_table, will_write_tmp_file)
 
   -- 1. Extract code-edit blocks using stack
   local code_edit_blocks = extract_code_edit_blocks(xml_table)
-  print(vim.inspect(code_edit_blocks))
 
   -- 2. Only keep blocks with both open and close <action> tags
   for _, block in ipairs(code_edit_blocks) do
     if has_action_tag(block) then
       -- 3. Parse fields from the code-edit block
-      print(vim.inspect(block))
       local t = parse_code_edit_block(block)
       table.insert(actions, t)
     end
   end
 
-  print(vim.inspect(actions))
   for _, t in ipairs(actions) do
     local act = t.action
     if act == "create_file" then
