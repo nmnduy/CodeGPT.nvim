@@ -75,8 +75,21 @@ function Utils.append_lines(lines, bufnr, start_row, start_col, end_row, end_col
     -- Replace the old lines with the new appended lines
     vim.api.nvim_buf_set_lines(bufnr, start_row, end_row + 1, false, current_lines)
 
-    -- Move the cursor to the beginning of the newly appended content
-    vim.api.nvim_win_set_cursor(0, {start_row + #current_lines - #lines - 2 + 1, 0})
+    -- Find a window showing the buffer, or use the current window and set its buffer
+    -- This works even when the cursor is not on the buffer waiting for response
+    local winid = nil
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+        if vim.api.nvim_win_get_buf(win) == bufnr then
+            winid = win
+            break
+        end
+    end
+    if not winid then
+        vim.api.nvim_set_current_buf(bufnr)
+        winid = vim.api.nvim_get_current_win()
+    end
+
+    vim.api.nvim_win_set_cursor(winid, {start_row + #current_lines - #lines - 2 + 1, 0})
 end
 
 local function get_code_block(lines2)
