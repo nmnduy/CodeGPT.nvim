@@ -17,7 +17,7 @@ function Commands.run_cmd(command, command_args, text_selection)
   local bufnr = vim.api.nvim_get_current_buf()
   local start_row, start_col, end_row, end_col = Utils.get_visual_selection()
 
-  if cmd_opts.callback_type == 'code_agent' then
+  if command == "agentic" then
     local prompt_addition = CodeEdit.get_prompt()
     cmd_opts.user_message_template = prompt_addition .. cmd_opts.user_message_template
 
@@ -27,14 +27,14 @@ function Commands.run_cmd(command, command_args, text_selection)
       CodeEdit.parse_and_apply_actions(lines)
     end)
     return
-  end
+  else
+    local new_callback = function(lines)
+      cmd_opts.callback(lines, bufnr, start_row, start_col, end_row, end_col)
+    end
 
-  local new_callback = function(lines)
-    cmd_opts.callback(lines, bufnr, start_row, start_col, end_row, end_col)
+    local request = Providers.get_provider().make_request(command, cmd_opts, command_args, text_selection)
+    Providers.get_provider().make_call(request, new_callback)
   end
-
-  local request = Providers.get_provider().make_request(command, cmd_opts, command_args, text_selection)
-  Providers.get_provider().make_call(request, new_callback)
 end
 
 function Commands.get_status(...)

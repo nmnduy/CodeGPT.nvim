@@ -48,4 +48,17 @@ function CodeGptModule.run_cmd(opts)
     Commands.run_cmd(command, command_args, text_selection)
 end
 
+function CodeGptModule.agentic(opts)
+    local text_selection = Utils.get_selected_lines()
+    local command_args = table.concat(opts.fargs, " ")
+    Commands.run_cmd('agentic', command_args, text_selection)
+end
+
+function CodeGptModule.inline_edit(opts)
+    local text_selection = Utils.get_selected_lines()
+    local command_args = table.concat(opts.fargs, " ")
+    -- this is what dpayne defined as inline_edit
+    Commands.run_cmd('code_edit', command_args, text_selection)
+end
+
 return CodeGptModule
