@@ -161,7 +161,7 @@ local function write_tempfile(contents)
   local f = assert(io.open(tmpname, "w"))
   f:write(contents)
   f:close()
-  print("Failed edit instructions saved to tempfile: " .. tmpname)
+  print("Edit instructions saved to: " .. tmpname)
 end
 
 function M.parse_and_apply_actions(xml_str)
@@ -204,10 +204,11 @@ function M.parse_and_apply_actions(xml_str)
     end
   end)
 
-  if not ok then
-    write_tempfile(xml_str)
-    error("Failed to parse/apply actions: " .. tostring(err))
-  end
+  write_tempfile(xml_str)
+  -- if not ok then
+  --   write_tempfile(xml_str)
+  --   error("Failed to parse/apply actions: " .. tostring(err))
+  -- end
 end
 
 return M
