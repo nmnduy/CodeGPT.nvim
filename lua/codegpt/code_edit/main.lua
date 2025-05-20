@@ -19,40 +19,55 @@ You MUST specify the file path, code element name, type (e.g., "function", "clas
 **An example of a valid response:**
 
 ```xml
-<action type="replace_definition">
-  <file>path/to/file.py</file>
-  <name>function_or_class_name</name>
-  <def_type>function|class|method</def_type>
-  <lang>python|java|go</lang>
-  <code>
-def func():
-    # new content here
-  </code>
-</action>
-<action type="remove_definition">
-  <file>path/to/file.go</file>
-  <name>function_or_class_name</name>
-  <def_type>function|class|method</def_type>
-  <lang>go|java|python</lang>
-</action>
-<action type="add_content">
-  <file>path/to/file.java</file>
-  <code>
-    // code to add at the end of the file
-  </code>
-</action>
-<action type="remove_file">
-  <file>path/to/file.py</file>
-</action>
-<action type="replace_snippet">
-  <file>path/to/file.java</file>
-  <old_snippet>
-    // code to be replaced
-  </old_snippet>
-  <new_snippet>
-    // code to replace with
-  </new_snippet>
-</action>
+<code-edit>
+    <action>replace_definition</action>
+    <file>utils/helpers.py</file>
+    <name>calculate_sum</name>
+    <def_type>function</def_type>
+    <lang>python</lang>
+    <code>
+    def calculate_sum(a, b):
+        return a + b
+    </code>
+</code-edit>
+
+<code-edit>
+    <action>remove_definition</action>
+    <file>services/old_service.py</file>
+    <name>OldService</name>
+    <def_type>class</def_type>
+    <lang>python</lang>
+</code-edit>
+
+<code-edit>
+    <action>add_at_end</action>
+    <file>models/user.py</file>
+    <lang>python</lang>
+    <code>
+    class UserProfile:
+        def __init__(self, user_id):
+            self.user_id = user_id
+    </code>
+</code-edit>
+
+<code-edit>
+    <action>remove_file</action>
+    <file>deprecated/unused_utils.py</file>
+</code-edit>
+
+<code-edit>
+    <action>replace_snippet</action>
+    <file>main.py</file>
+    <lang>python</lang>
+    <old>
+    result = calculate_sum(3, 5)
+    print(result)
+    </old>
+    <new>
+    result = calculate_sum(10, 20)
+    print("Sum is:", result)
+    </new>
+</code-edit>
 ```
 ]]
 
@@ -139,85 +154,41 @@ local function trim(s)
 end
 
 function M.parse_and_apply_actions(xml_str)
-  local stack = {}
   local actions = {}
 
-  local i = 1
-  local len = #xml_str
-
-  while i <= len do
-    local tag_start, tag_end, closing, tag_name, attrs = xml_str:find("<(/?)([%w_]+)(.-)>", i)
-    if tag_start then
-      if tag_start > i then
-        -- Collect text between tags
-        local text = xml_str:sub(i, tag_start-1)
-        if #stack > 0 then
-          local top = stack[#stack]
-          if not top.content then top.content = "" end
-          top.content = top.content .. text
-        end
-      end
-
-      if closing == "/" then
-        -- Closing tag: pop stack, assign content to parent
-        local top = table.remove(stack)
-        top.content = top.content or ""
-        if #stack > 0 then
-          local parent = stack[#stack]
-          if not parent.children then parent.children = {} end
-          table.insert(parent.children, top)
-        else
-          table.insert(actions, top)
-        end
-      else
-        -- Opening tag: push to stack
-        local node = {tag=tag_name}
-        -- parse attributes if needed (not used in examples)
-        table.insert(stack, node)
-      end
-      i = tag_end + 1
-    else
-      -- No more tags, just trailing text
-      if #stack > 0 then
-        local top = stack[#stack]
-        local text = xml_str:sub(i)
-        top.content = (top.content or "") .. text
-      end
-      break
+  for code_edit_block in xml_str:gmatch("<code%-edit>(.-)</code%-edit>") do
+    local t = {}
+    for tag in pairs {action=1, file=1, name=1, def_type=1, lang=1, old=1, new=1} do
+      local pat = string.format("<%s>(.-)</%s>", tag, tag)
+      local val = code_edit_block:match(pat)
+      if val then t[tag] = trim(val) end
     end
+
+    -- code tag can contain multiline, even with closing tags for other languages
+    local code_start = code_edit_block:find("<code>")
+    local code_end = code_edit_block:find("</code>")
+    if code_start and code_end and code_end > code_start+5 then
+      t.code = code_edit_block:sub(code_start+6, code_end-1)
+      t.code = trim(t.code)
+    end
+
+    table.insert(actions, t)
   end
 
-  -- flatten single-child content fields (e.g. <file>xyz</file>)
-  local function node_to_table(node)
-    if node.children then
-      local t = {}
-      for _, child in ipairs(node.children) do
-        t[child.tag] = node_to_table(child)
-      end
-      return t
+  for _, t in ipairs(actions) do
+    local act = t.action
+    if act == "replace_definition" then
+      M.replace_definition(t.file, t.name, t.def_type, t.code, t.lang)
+    elseif act == "remove_definition" then
+      M.remove_definition(t.file, t.name, t.def_type, t.lang)
+    elseif act == "add_at_end" then
+      M.add_content(t.file, t.code)
+    elseif act == "remove_file" then
+      M.remove_file(t.file)
+    elseif act == "replace_snippet" then
+      M.replace_snippet(t.file, t.old, t.new)
     else
-      return trim(node.content or "")
-    end
-  end
-
-  for _, act in ipairs(actions) do
-    if act.tag == "action" then
-      local t = node_to_table(act)
-      local action_type = t.type or act.type or ""
-      if action_type == "replace_definition" then
-        -- <file>, <name>, <def_type>, <lang>, <code>
-        M.replace_definition(t.file, t.name, t.def_type, t.code, t.lang)
-      elseif action_type == "remove_definition" then
-        M.remove_definition(t.file, t.name, t.def_type, t.lang)
-      elseif action_type == "add_content" then
-        M.add_content(t.file, t.code)
-      elseif action_type == "remove_file" then
-        M.remove_file(t.file)
-      elseif action_type == "replace_snippet" then
-        M.replace_snippet(t.file, t.old_snippet, t.new_snippet)
-      else
-        error("Unknown action type: " .. tostring(action_type))
-      end
+      error("Unknown action: " .. tostring(act))
     end
   end
 end
