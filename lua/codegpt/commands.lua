@@ -23,6 +23,13 @@ function Commands.run_cmd(command, command_args, text_selection)
 
     local request = Providers.get_provider().make_request(command, cmd_opts, command_args, text_selection)
     Providers.get_provider().make_call(request, function(lines)
+      local tmpfile = os.tmpname()
+      local file = io.open(tmpfile, "w")
+      for _, line in ipairs(lines) do
+        file:write(line, "\n")
+      end
+      file:close()
+      print("Saving LLM output to " .. tmpfile)
       -- lines: XML string from code agent
       will_write_tmp_file = true
       CodeEdit.parse_and_apply_actions(lines, will_write_tmp_file)

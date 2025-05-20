@@ -14,12 +14,23 @@ You are a code refactoring assistant. You have access to tools for editing code 
 - Add content at the end of a file.
 - Remove an entire file.
 - Replace a specific snippet of code with a new snippet.
+- Create a new file with specified content.
 
 You MUST specify the file path, code element name, type (e.g., "function", "class", "method"), and the programming language (python, java, or go) where required.
 
 **An example of a valid response:**
 
 ```xml
+<code-edit>
+    <action>create_file</action>
+    <file>utils/math_utils.py</file>
+    <lang>python</lang>
+    <new>
+def multiply(a, b):
+    return a * b
+    </new>
+</code-edit>
+
 <code-edit>
     <action>replace_definition</action>
     <file>utils/helpers.py</file>
@@ -79,6 +90,15 @@ local handlers = {
   java = java,
   go = go,
 }
+
+function M.create_file(file_path, content)
+  local f = assert(io.open(file_path, "w"))
+  f:write(content)
+  if content:sub(-1) ~= "\n" then
+    f:write("\n")
+  end
+  f:close()
+end
 
 -- Find and Replace
 function M.replace_definition(file_path, name, type, new_content, lang)
@@ -171,14 +191,15 @@ end
 --- @param xml table
 --- @return table  -- returns a table (array) of extracted code block strings
 local function extract_code_edit_blocks(xml)
+  assert(type(xml) == "table" and #xml > 0, "xml must be a non-empty table")
   local results = {}
   local open = 0
   local lines = {}
-  for line in xml:gmatch("([^\n]*)\n?") do
     -- print("line " .. line)
     -- print("open " .. open)
     -- print(vim.inspect(lines))
     -- print("---")
+  for _, line in ipairs(xml) do
     if line:find("<code%-edit>") then
       open = open + 1
       if open == 1 then
@@ -208,6 +229,24 @@ end
 
 local function parse_action(line)
   return line:match("<action>(.-)</action>")
+end
+
+local function parse_create_file_block(lines)
+  local t = { action = "create_file" }
+  for i = 1, #lines do
+    local line = lines[i]
+    if line:find("<file>") then t.file = line:match("<file>(.-)</file>"):gsub("^%s+", ""):gsub("%s+$", "") end
+    if line:find("<lang>") then t.lang = line:match("<lang>(.-)</lang>"):gsub("^%s+", ""):gsub("%s+$", "") end
+    if line:find("<new>") then
+      local new_lines = {}
+      for j = i+1, #lines - 1 do
+        table.insert(new_lines, lines[j])
+      end
+      t.new = table.concat(new_lines, "\n")
+      break
+    end
+  end
+  return t
 end
 
 local function parse_replace_definition_block(lines)
@@ -314,7 +353,9 @@ local function parse_code_edit_block(content)
     if action then
       local rest_lines = {}
       for j = i, #lines do table.insert(rest_lines, lines[j]) end
-      if action == "replace_definition" then
+      if action == "create_file" then
+        return parse_create_file_block(rest_lines)
+      elseif action == "replace_definition" then
         return parse_replace_definition_block(rest_lines)
       elseif action == "remove_definition" then
         return parse_remove_definition_block(rest_lines)
@@ -334,47 +375,49 @@ end
 ---@param xml_table string
 ---@param will_write_tmp_file boolean
 function M.parse_and_apply_actions(xml_table, will_write_tmp_file)
+  assert(xml_table ~= nil and next(xml_table) ~= nil, "xml_table must not be nil or empty")
   if will_write_tmp_file == nil then will_write_tmp_file = false end
   local actions = {}
 
-  local ok, err = pcall(function()
-    -- 1. Extract code-edit blocks using stack
-    local code_edit_blocks = extract_code_edit_blocks(xml_table)
-    print(vim.inspect(code_edit_blocks))
+  -- 1. Extract code-edit blocks using stack
+  local code_edit_blocks = extract_code_edit_blocks(xml_table)
+  print(vim.inspect(code_edit_blocks))
 
-    -- 2. Only keep blocks with both open and close <action> tags
-    for _, block in ipairs(code_edit_blocks) do
-      if has_action_tag(block) then
-        -- 3. Parse fields from the code-edit block
-        print(vim.inspect(block))
-        local t = parse_code_edit_block(block)
-        table.insert(actions, t)
-      end
+  -- 2. Only keep blocks with both open and close <action> tags
+  for _, block in ipairs(code_edit_blocks) do
+    if has_action_tag(block) then
+      -- 3. Parse fields from the code-edit block
+      print(vim.inspect(block))
+      local t = parse_code_edit_block(block)
+      table.insert(actions, t)
     end
+  end
 
-    print(vim.inspect(actions))
-    for _, t in ipairs(actions) do
-      local act = t.action
-      if act == "replace_definition" then
-        print(string.format("[replace_definition] file: %s, def_type: %s", tostring(t.file), tostring(t.def_type)))
-        M.replace_definition(t.file, t.name, t.def_type, t.code, t.lang)
-      elseif act == "remove_definition" then
-        print(string.format("[remove_definition] file: %s, def_type: %s", tostring(t.file), tostring(t.def_type)))
-        M.remove_definition(t.file, t.name, t.def_type, t.lang)
-      elseif act == "add_at_end" then
-        print(string.format("[add_at_end] file: %s", tostring(t.file)))
-        M.add_content(t.file, t.code)
-      elseif act == "remove_file" then
-        print(string.format("[remove_file] file: %s", tostring(t.file)))
-        M.remove_file(t.file)
-      elseif act == "replace_snippet" then
-        print(string.format("[replace_snippet] file: %s | old (first 30): %s", tostring(t.file), string.sub(t.old or "", 1, 30)))
-        M.replace_snippet(t.file, t.old, t.new)
-      else
-        error("Unknown action: " .. tostring(act))
-      end
+  print(vim.inspect(actions))
+  for _, t in ipairs(actions) do
+    local act = t.action
+    if act == "create_file" then
+      print(string.format("[create_file] file: %s", tostring(t.file)))
+      M.create_file(t.file, t.new)
+    elseif act == "replace_definition" then
+      print(string.format("[replace_definition] file: %s, def_type: %s", tostring(t.file), tostring(t.def_type)))
+      M.replace_definition(t.file, t.name, t.def_type, t.code, t.lang)
+    elseif act == "remove_definition" then
+      print(string.format("[remove_definition] file: %s, def_type: %s", tostring(t.file), tostring(t.def_type)))
+      M.remove_definition(t.file, t.name, t.def_type, t.lang)
+    elseif act == "add_at_end" then
+      print(string.format("[add_at_end] file: %s", tostring(t.file)))
+      M.add_content(t.file, t.code)
+    elseif act == "remove_file" then
+      print(string.format("[remove_file] file: %s", tostring(t.file)))
+      M.remove_file(t.file)
+    elseif act == "replace_snippet" then
+      print(string.format("[replace_snippet] file: %s | old (first 30): %s", tostring(t.file), string.sub(t.old or "", 1, 30)))
+      M.replace_snippet(t.file, t.old, t.new)
+    else
+      error("Unknown action: " .. tostring(act))
     end
-  end)
+  end
 
   if will_write_tmp_file then
     write_tempfile(xml_table)
@@ -395,7 +438,7 @@ def f(a): return a+1
 </code>
 </code-edit>
 ]]
-  local blocks1 = extract_code_edit_blocks(xml1)
+  local blocks1 = extract_code_edit_blocks(vim.fn.split(vim.trim(xml1), "\n"))
   assert(type(blocks1) == "table", "Should return table of blocks")
   assert(#blocks1 == 1, "Should extract one block")
   assert(blocks1[1]:find("<action>replace_definition"), "Should contain action tag")
@@ -423,7 +466,7 @@ type Bar struct{}
 </code>
 </code-edit>
 ]]
-  local blocks2 = extract_code_edit_blocks(xml2)
+  local blocks2 = extract_code_edit_blocks(vim.fn.split(vim.trim(xml2), "\n"))
   assert(#blocks2 == 2, "Should extract two blocks")
   assert(blocks2[2]:find("bar.go"), "Second block file should be bar.go")
 
@@ -432,41 +475,35 @@ type Bar struct{}
 <action>replace_definition</action>
 <file>foo.py</file>
 ]]
-  local blocks3 = extract_code_edit_blocks(xml3)
+  local blocks3 = extract_code_edit_blocks(vim.fn.split(vim.trim(xml3), "\n"))
   assert(type(blocks3) == "table", "Should return table even if no blocks")
   assert(#blocks3 == 0, "Should return empty table if no <code-edit> blocks")
-
-  -- Test 4: Empty input
-  local blocks4 = extract_code_edit_blocks("")
-  assert(type(blocks4) == "table", "Should return table for empty input")
-  assert(#blocks4 == 0, "Should return empty table for empty string")
 
 end
 
 local function test_extract_code_edit_blocks_nested()
-  local input = [[
-<code-edit>
-  <action>replace_definition</action>
-  <file>foo.py</file>
-  <name>f</name>
-  <def_type>function</def_type>
-  <lang>python</lang>
-  <code>
-def f():
-    x = 1
-    # Below is a code-edit tag inside code
-    s = """
-<code-edit>
-  <file>should_not_be_counted.py</file>
-</code-edit>
-"""
-    return x
-  </code>
-</code-edit>
-]]
+  local input = {
+    "<code-edit>",
+    "  <action>replace_definition</action>",
+    "  <file>foo.py</file>",
+    "  <name>f</name>",
+    "  <def_type>function</def_type>",
+    "  <lang>python</lang>",
+    "  <code>",
+    "def f():",
+    "    x = 1",
+    "    # Below is a code-edit tag inside code",
+    "    s = \"\"\"",
+    "<code-edit>",
+    "  <file>should_not_be_counted.py</file>",
+    "</code-edit>",
+    "\"\"\"",
+    "    return x",
+    "  </code>",
+    "</code-edit>",
+  }
   local blocks = extract_code_edit_blocks(input)
   assert(#blocks == 1, "Should extract one outer code-edit block")
-  -- Confirm that embedded <code-edit> in the code does not split
   assert(blocks[1]:find("should_not_be_counted") ~= nil, "Embedded <code-edit> inside <code> should be inside the block as string")
 end
 
@@ -491,7 +528,7 @@ def f():
   </code>
 </code-edit>
 ]]
-  local blocks = extract_code_edit_blocks(input)
+  local blocks = extract_code_edit_blocks(vim.fn.split(vim.trim(input), "\n"))
   assert(#blocks == 1, "Expected exactly one code edit block. But saw " .. #blocks)
   local t = parse_code_edit_block(blocks[1])
   assert(t.action == "replace_definition", "Action parse failed for nested test")
@@ -582,9 +619,12 @@ local function test_parse_and_apply_actions_from_file()
     print("warn: Could not open /tmp/edit.xml for reading")
     return
   end
-  local xml = f:read("*a")
+  local xml_lines = {}
+  for line in f:lines() do
+    table.insert(xml_lines, line)
+  end
   f:close()
-  M.parse_and_apply_actions(xml, false)
+  M.parse_and_apply_actions(xml_lines, false)
 end
 
 if os.getenv("CODE_GPT_NVIM_UNIT_TEST") then

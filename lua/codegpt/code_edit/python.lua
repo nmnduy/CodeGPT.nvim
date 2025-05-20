@@ -7,7 +7,8 @@ function python.find_definition(lines, name, type)
   if type == "function" then
     pattern = "^def%s+" .. name .. "%s*%("
   elseif type == "class" then
-    pattern = "^class%s+" .. name .. "%s*%("
+    -- Match "class Name:" or "class Name(" etc.
+    pattern = "^class%s+" .. name .. "%s*[:%(]"
   else
     -- object variable (top level assignment)
     pattern = "^" .. name .. "%s*="
