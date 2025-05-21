@@ -3,18 +3,18 @@ local python = require "codegpt.code_edit.python"
 local java = require "codegpt.code_edit.java"
 local typescript = require "codegpt.code_edit.typescript"
 local go = require "codegpt.code_edit.go"
+local javascript = require "codegpt.code_edit.javascript"
+local tsx = require "codegpt.code_edit.tsx"
 
 prompt = [[
 **Instructions:**
 
 You are a code refactoring assistant. You have access to tools for editing code files programmatically. You can:
 
-- Replace a function, class, or method definition in a file with new content.
-- Remove a specific function, class, or method definition from a file.
-- Add content at the end of a file.
-- Remove an entire file.
-- Replace a specific snippet of code with a new snippet.
 - Create a new file with specified content.
+- Add content at the end of a file.
+- Replace a specific snippet of code with a new snippet.
+- Remove an entire file.
 
 You MUST specify the file path, code element name, type (e.g., "function", "class", "method"), and the programming language (python, java, or go) where required.
 
@@ -32,26 +32,6 @@ def multiply(a, b):
 </code-edit>
 
 <code-edit>
-    <action>replace_definition</action>
-    <file>utils/helpers.py</file>
-    <name>calculate_sum</name>
-    <def_type>function</def_type>
-    <lang>python</lang>
-    <code>
-    def calculate_sum(a, b):
-        return a + b
-    </code>
-</code-edit>
-
-<code-edit>
-    <action>remove_definition</action>
-    <file>services/old_service.py</file>
-    <name>OldService</name>
-    <def_type>class</def_type>
-    <lang>python</lang>
-</code-edit>
-
-<code-edit>
     <action>add_at_end</action>
     <file>models/user.py</file>
     <lang>python</lang>
@@ -60,11 +40,6 @@ def multiply(a, b):
         def __init__(self, user_id):
             self.user_id = user_id
     </code>
-</code-edit>
-
-<code-edit>
-    <action>remove_file</action>
-    <file>deprecated/unused_utils.py</file>
 </code-edit>
 
 <code-edit>
@@ -80,6 +55,11 @@ def multiply(a, b):
     print("Sum is:", result)
     </new>
 </code-edit>
+
+<code-edit>
+    <action>remove_file</action>
+    <file>deprecated/unused_utils.py</file>
+</code-edit>
 ```
 ]]
 
@@ -89,6 +69,9 @@ local handlers = {
   python = python,
   java = java,
   go = go,
+  typescript = typescript,
+  javascript = javascript,
+  tsx = tsx,
 }
 
 function M.create_file(file_path, content)
