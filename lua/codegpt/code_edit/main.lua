@@ -14,6 +14,7 @@ You are a code refactoring assistant. You have access to tools for editing code 
 - Create a new file with specified content.
 - Add content at the end of a file.
 - Replace a specific snippet of code with a new snippet.
+- Delete a code snippet
 - Remove an entire file.
 
 You MUST specify the file path, code element name, type (e.g., "function", "class", "method"), and the programming language (python, java, or go) where required.
@@ -54,6 +55,16 @@ def multiply(a, b):
     result = calculate_sum(10, 20)
     print("Sum is:", result)
     </new>
+</code-edit>
+
+<code-edit>
+    <action>delete_snippet</action>
+    <file>example.py</file>
+    <lang>python</lang>
+    <old>
+def temporary_function():
+    print("This function will be deleted.")
+    </old>
 </code-edit>
 
 <code-edit>
@@ -222,6 +233,25 @@ local function parse_action(line)
   return line:match("<action>(.-)</action>")
 end
 
+local function parse_delete_snippet_block(lines)
+  local t = {}
+  t["action"] = "delete_snippet"
+  for i = 1, #lines do
+    local line = lines[i]
+    if line:find("<file>") then t["file"] = line:match("<file>(.-)</file>"):gsub("^%s+", ""):gsub("%s+$", "") end
+    if line:find("<lang>") then t["lang"] = line:match("<lang>(.-)</lang>"):gsub("^%s+", ""):gsub("%s+$", "") end
+    if line:find("<old>") then
+      local old_lines = {}
+      for k = i+1, #lines - 1 do
+        table.insert(old_lines, lines[k])
+      end
+      t["old"] = table.concat(old_lines, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
+      break
+    end
+  end
+  return t
+end
+
 local function parse_create_file_block(lines)
   local t = { action = "create_file" }
   for i = 1, #lines do
@@ -356,6 +386,8 @@ local function parse_code_edit_block(content)
         return parse_remove_file_block(rest_lines)
       elseif action == "replace_snippet" then
         return parse_replace_snippet_block(rest_lines)
+      elseif action == "delete_snippet" then
+        return parse_delete_snippet_block(rest_lines)
       end
     end
   end
