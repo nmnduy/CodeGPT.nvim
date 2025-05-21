@@ -12,7 +12,6 @@ prompt = [[
 You are a code refactoring assistant. You have access to tools for editing code files programmatically. You can:
 
 - Create a new file with specified content.
-- Add content at the end of a file.
 - Replace a specific snippet of code with a new snippet.
 - Delete a code snippet
 - Remove an entire file.
@@ -30,17 +29,6 @@ You MUST specify the file path, code element name, type (e.g., "function", "clas
 def multiply(a, b):
     return a * b
     </new>
-</code-edit>
-
-<code-edit>
-    <action>add_at_end</action>
-    <file>models/user.py</file>
-    <lang>python</lang>
-    <code>
-    class UserProfile:
-        def __init__(self, user_id):
-            self.user_id = user_id
-    </code>
 </code-edit>
 
 <code-edit>
