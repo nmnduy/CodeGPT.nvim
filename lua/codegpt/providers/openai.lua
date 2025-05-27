@@ -26,7 +26,8 @@ end
 local function get_token_count(messages)
     local token_count = 0
     for _, message in ipairs(messages) do
-        token_count = token_count + #message.content
+        token_count = token_count + math.floor(#message.content / 4)
+        token_count = token_count + 1 -- 1 token for the role
     end
     return token_count
 end
