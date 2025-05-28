@@ -43,12 +43,19 @@ function OpenAIProvider.make_request(command, cmd_opts, command_args, text_selec
     end
 
     local request = {
-        temperature = cmd_opts.temperature,
         n = cmd_opts.number_of_choices,
         model = cmd_opts.model,
         messages = messages,
-        max_tokens = cmd_opts.max_output_tokens,
     }
+
+    -- thinking models start with 'o'. they dont allow setting temperature
+    -- and also max_tokens becomes max_completion_tokens
+    if string.sub(cmd_opts.model, 1, 1) == 'o' then
+        request.max_completion_tokens = cmd_opts.max_completion_tokens
+    else
+        request.temperature = cmd_opts.temperature
+        request.max_tokens = cmd_opts.max_output_tokens
+    end
 
     request = vim.tbl_extend("force", request, cmd_opts.extra_params)
     return request
