@@ -110,4 +110,75 @@ function Ui.popup(lines, filetype, bufnr, start_row, start_col, end_row, end_col
     setup_ui_element(lines, filetype, bufnr, start_row, start_col, end_row, end_col, ui_elem)
 end
 
+local function native_popup(lines, filetype, bufnr, sr, sc, er, ec)
+  -- create a scratch buffer
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_option(buf, "bufhidden", "wipe")
+  vim.api.nvim_buf_set_option(buf, "filetype", filetype)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+
+  -- compute float size & position (80%×60% centered by default)
+  local cw = vim.o.columns
+  local ch = vim.o.lines
+  local w  = math.floor(cw * 0.80)
+  local h  = math.floor(ch * 0.60)
+  local row = math.floor((ch - h) / 2 - 1)
+  local col = math.floor((cw - w) / 2)
+
+  -- open the window
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative   = "editor",
+    row        = row,
+    col        = col,
+    width      = w,
+    height     = h,
+    style      = "minimal",
+    border     = vim.g.codegpt_popup_border or "single",
+    noautocmd  = true,
+  })
+
+  -- wrap text?
+  if vim.g.codegpt_wrap_popup_text ~= nil then
+    vim.api.nvim_win_set_option(win, "wrap", vim.g.codegpt_wrap_popup_text)
+  end
+
+  -- close on BufLeave
+  vim.api.nvim_create_autocmd("BufLeave", {
+    buffer = buf,
+    once   = true,
+    callback = function()
+      if vim.api.nvim_win_is_valid(win) then
+        vim.api.nvim_win_close(win, true)
+      end
+    end,
+  })
+
+  -- mappings in the popup buffer
+  local opts = { buffer = buf, silent = true }
+
+  -- quit with 'q'
+  vim.keymap.set("n", vim.g.codegpt_ui_commands.quit, function()
+    vim.api.nvim_win_close(win, true)
+  end, vim.tbl_extend("force", opts, { noremap = true }))
+
+  -- replace lines in original buffer with popup output (ctrl-o by default)
+  vim.keymap.set("n", vim.g.codegpt_ui_commands.use_as_output, function()
+    vim.api.nvim_buf_set_text(bufnr, sr, sc, er, ec, lines)
+    vim.api.nvim_win_close(win, true)
+  end, vim.tbl_extend("force", opts, { noremap = true }))
+
+  -- select all & prefill :Chat (ctrl-i by default)
+  vim.keymap.set("n", vim.g.codegpt_ui_commands.use_as_input, function()
+    vim.api.nvim_feedkeys("ggVG:Chat ", "n", false)
+  end, opts)
+
+  -- custom user mappings
+  for _, cmd in ipairs(vim.g.codegpt_ui_custom_commands or {}) do
+    -- cmd = {mode, lhs, rhs, map_opts}
+    vim.keymap.set(cmd[1], cmd[2], cmd[3], vim.tbl_extend("force", { buffer = buf }, cmd[4] or {}))
+  end
+
+  return buf, win
+end
+
 return Ui

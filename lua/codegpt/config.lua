@@ -31,7 +31,7 @@ vim.g["codegpt_popup_window_options"] = {}
 vim.g["codegpt_text_popup_filetype"] = "markdown"
 
 -- Set the type of ui to use for the popup, options are "popup", "vertical" or "horizontal"
-vim.g["codegpt_popup_type"] = "popup"
+vim.g["codegpt_popup_type"] = "split"
 
 -- Set the height of the horizontal popup
 vim.g["codegpt_horizontal_popup_size"] = "20%"
