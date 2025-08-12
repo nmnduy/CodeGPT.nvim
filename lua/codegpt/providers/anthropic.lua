@@ -21,9 +21,8 @@ function AnthropicProvider.make_request(command, cmd_opts, command_args, text_se
         cmd_opts)
     local messages = generate_messages(command, cmd_opts, command_args, text_selection)
 
-    -- context window is 100k-200k tokens
-    -- but the output is fixed at 4096 tokens
-    local max_tokens = 8192
+    -- Use max_completion_tokens if available, otherwise fall back to max_tokens or default
+    local max_tokens = cmd_opts.max_completion_tokens or cmd_opts.max_tokens or 8192
 
     local request = {
         temperature = cmd_opts.temperature or 1.0,
