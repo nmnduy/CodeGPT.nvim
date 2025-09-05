@@ -122,21 +122,44 @@ function OpenAIProvider.handle_response(json, cb)
 end
 
 function OpenAIProvider.make_call(payload, cb)
-    local payload_str = vim.fn.json_encode(payload)
-    local url = vim.g["codegpt_chat_completions_url"]
-    local headers = OpenAIProvider.make_headers()
-    Api.run_started_hook()
-    curl.post(url, {
-        body = payload_str,
-        headers = headers,
-        callback = function(response)
-            curl_callback(response, cb)
-        end,
-        on_error = function(err)
-            print('Error:', err.message)
-            Api.run_finished_hook()
-        end,
-    })
+  -- encode to JSON
+  local payload_str = vim.fn.json_encode(payload)
+
+  -- create a temp file (we add .json so it's obvious if you go hunting)
+  local tmpname = os.tmpname
+  local tmpfile = (tmpname()) .. ".json"
+
+  -- write our payload to it
+  local f, err = io.open(tmpfile, "w")
+  if not f then
+    error("Failed to open temp file: " .. tostring(err))
+  end
+  f:write(payload_str)
+  f:close()
+
+  -- prepare headers and url
+  local url     = vim.g["codegpt_chat_completions_url"]
+  local headers = OpenAIProvider.make_headers()
+
+  Api.run_started_hook()
+
+  -- fire off the request, passing "@<filename>" so libcurl reads from file
+  curl.post(url, {
+    -- no need to put the '@' before the file name
+    body    = tmpfile,
+    headers = headers,
+    callback = function(response)
+      -- delete temp file on success
+      os.remove(tmpfile)
+      curl_callback(response, cb)
+    end,
+    on_error = function(err)
+      -- always delete the temp file and finish hook on error
+      os.remove(tmpfile)
+      print("Error:", err.message)
+      Api.run_finished_hook()
+    end,
+  })
 end
 
 return OpenAIProvider
